@@ -1,4 +1,4 @@
-# REARMP
+# reARMP
 A work-in-progress **armp** .bin file exporter/importer for Dragon Engine games (Yakuza Kiwami 2, Yakuza 6, Judgment)
 
 
@@ -6,6 +6,6 @@ A work-in-progress **armp** .bin file exporter/importer for Dragon Engine games 
   
 ### How to use
 
-```"rearmp" <file>```
+```"reARMP" <file>```
 
 You can also drag&drop
