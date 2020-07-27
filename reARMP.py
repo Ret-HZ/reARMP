@@ -9,7 +9,7 @@ from collections import OrderedDict
 
 
 hexFile = b''
-rebuildFileTemp = b''
+rebuildFileTemp = bytearray()
 exportDict = OrderedDict()
 stringOffsetTable = []
 stringTable = []
@@ -34,9 +34,9 @@ def readFromPosition (offset, size, value_type):
 
 
 def writeToPosition (target, offset, size, value):
-    target = target[:offset*2] + value + target[(offset + size)*2:]
+    target[offset:offset + size] = value
     return target
-    
+
 
 
 def swapEndian(hexStr, value_type):
@@ -71,7 +71,7 @@ def storeTable (startOffset, tableSize, tableContainer): #Stores every entry of 
     for nibble in table:
         if (len(byteGroup) <8):
             byteGroup += nibble
-			
+
         if (len(byteGroup) == 8):
             tableContainer.append(byteGroup)
             byteGroup= ""
@@ -422,18 +422,18 @@ def rebuildFile ():
         print ("Rebuilding...")
         global rebuildFileTemp
 
-        rebuildFileTemp += b'61726D70' #Add magic
-        rebuildFileTemp += b'00000000'
-        rebuildFileTemp += b'0C000100' #Version used by FOTNS, 6 and K2
-        rebuildFileTemp += b'00000000'
-        rebuildFileTemp += b'20000000' #Pointer to main table (will always be the same on single-table files)
-        rebuildFileTemp += b'00000000'*3 #Fill padding
-        rebuildFileTemp += b'00000000'*20 #Set the main table to all zeros for now
+        rebuildFileTemp += b'\x61\x72\x6D\x70' #Add magic
+        rebuildFileTemp += b'\x00\x00\x00\x00'
+        rebuildFileTemp += b'\x0C\x00\x01\x00' #Version used by FOTNS, 6 and K2
+        rebuildFileTemp += b'\x00\x00\x00\x00'
+        rebuildFileTemp += b'\x20\x00\x00\x00' #Pointer to main table (will always be the same on single-table files)
+        rebuildFileTemp += b'\x00\x00\x00\x00'*3 #Fill padding
+        rebuildFileTemp += b'\x00\x00\x00\x00'*20 #Set the main table to all zeros for now
 
 
         #Row Validity
-        pointerToBitArray1 = len(rebuildFileTemp)/2
-        #rebuildFileTemp += b'FF' * int(math.ceil(jsonInfo["ROW_COUNT"]/8) ) # Write a dummy bitarray1 with all the flags set to 1
+        pointerToBitArray1 = len(rebuildFileTemp)
+        #rebuildFileTemp += b'\xFF' * int(math.ceil(jsonInfo["ROW_COUNT"]/8) ) # Write a dummy bitarray1 with all the flags set to 1
         binary = ''
         for row in range(0, jsonInfo['ROW_COUNT']):
             bit = jsonInfo['ROW_CONTENT'][row]['isValid']
@@ -442,20 +442,20 @@ def rebuildFile ():
             if len(binary) == 8:
                 binary = binary[::-1]
                 binary = int(binary, 2).to_bytes(1, 'little')
-                rebuildFileTemp += binascii.hexlify(binary)
+                rebuildFileTemp += binary
                 binary = ''
             if row == jsonInfo['ROW_COUNT']-1:
                 binary = binary.ljust(8, '0')
                 binary = binary[::-1]
                 binary = int(binary, 2).to_bytes(1, 'little')
-                rebuildFileTemp += binascii.hexlify(binary)
+                rebuildFileTemp += binary
 
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x34, 0x4, int(pointerToBitArray1).to_bytes(4, 'little').hex().encode() )
-        rebuildFileTemp += b'00000000' + b'00'*calculateSeparator(len(rebuildFileTemp)/2) #Padding
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x34, 0x4, int(pointerToBitArray1).to_bytes(4, 'little') )
+        rebuildFileTemp += b'\x00\x00\x00\x00' + b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
 
 
         #Column Validity
-        pointerToBitArray2 = len(rebuildFileTemp)/2
+        pointerToBitArray2 = len(rebuildFileTemp)
         #rebuildFileTemp += b'FF' * int(math.ceil(jsonInfo["COLUMN_COUNT"]/8) ) # Write a dummy bitarray2 with all the flags set to 1
         binary = ''
         for column in range(0, jsonInfo['COLUMN_COUNT']):
@@ -465,88 +465,88 @@ def rebuildFile ():
             if len(binary) == 8:
                 binary = binary[::-1]
                 binary = int(binary, 2).to_bytes(1, 'little')
-                rebuildFileTemp += binascii.hexlify(binary)
+                rebuildFileTemp += binary
                 binary = ''
             if column == jsonInfo['COLUMN_COUNT']-1:
                 binary = binary.ljust(8, '0')
                 binary = binary[::-1]
                 binary = int(binary, 2).to_bytes(1, 'little')
-                rebuildFileTemp += binascii.hexlify(binary)
+                rebuildFileTemp += binary
         
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x58, 0x4, int(pointerToBitArray2).to_bytes(4, 'little').hex().encode() )
-        rebuildFileTemp += b'00'*calculateSeparator(len(rebuildFileTemp)/2) #Padding
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x58, 0x4, int(pointerToBitArray2).to_bytes(4, 'little') )
+        rebuildFileTemp += b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
 
 
         #Row Entries
         stringOffsetTableTemp = []
         for x in range(jsonInfo["ROW_COUNT"]): #Write row String table and store offsets for the String offset table
-            stringOffsetTableTemp.append(len(rebuildFileTemp)/2)
-            rebuildFileTemp += binascii.hexlify( jsonInfo["ROW_NAMES"][x].encode())
-            rebuildFileTemp += b'00' #Null byte
-        rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2) #Add null bytes at the end of the String table
+            stringOffsetTableTemp.append(len(rebuildFileTemp))
+            rebuildFileTemp += jsonInfo["ROW_NAMES"][x].encode()
+            rebuildFileTemp += b'\x00' #Null byte
+        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table
 
         #Row Entries Offset Table
-        stringOffsetTableOffset = len(rebuildFileTemp)/2
+        stringOffsetTableOffset = len(rebuildFileTemp)
         for x in range(jsonInfo["ROW_COUNT"]): #Write String Offset table
-            rebuildFileTemp += int(stringOffsetTableTemp[x]).to_bytes(4, 'little').hex().encode()    
+            rebuildFileTemp += int(stringOffsetTableTemp[x]).to_bytes(4, 'little')    
 
         #Row Entries and Row Entries Offset table pointers in Main Table
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x20, 0x4, jsonInfo["ROW_COUNT"].to_bytes(4, 'little').hex().encode() ) #Add the number of rows to the main table
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x30, 0x4, int(stringOffsetTableOffset).to_bytes(4, 'little').hex().encode() ) #Add the pointer to the String Offset table to the main table
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x20, 0x4, jsonInfo["ROW_COUNT"].to_bytes(4, 'little') ) #Add the number of rows to the main table
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x30, 0x4, int(stringOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table to the main table
 
         
         #Column Names
         if jsonInfo['COLUMN_COUNT'] > 0:
             stringOffsetTable2Temp = []
             for x in range(jsonInfo["COLUMN_COUNT"]): #Write Column String table and store offsets for the String offset table 2
-                stringOffsetTable2Temp.append(len(rebuildFileTemp)/2)
-                rebuildFileTemp += binascii.hexlify( jsonInfo["COLUMN_NAMES"][x].encode())
-                rebuildFileTemp += b'00' #Null byte
-            rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2) #Add null bytes at the end of the String table 2
+                stringOffsetTable2Temp.append(len(rebuildFileTemp))
+                rebuildFileTemp += jsonInfo["COLUMN_NAMES"][x].encode()
+                rebuildFileTemp += b'\x00' #Null byte
+            rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table 2
 
             #Column Names Offset Table
-            stringOffsetTable2Offset = len(rebuildFileTemp)/2
+            stringOffsetTable2Offset = len(rebuildFileTemp)
             for x in range(jsonInfo["COLUMN_COUNT"]): #Write String Offset table 2
-                rebuildFileTemp += int(stringOffsetTable2Temp[x]).to_bytes(4, 'little').hex().encode() 
+                rebuildFileTemp += int(stringOffsetTable2Temp[x]).to_bytes(4, 'little') 
 
             #Column Names and Column Names Offset table pointers in Main Table
-            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x24, 0x4, jsonInfo["COLUMN_COUNT"].to_bytes(4, 'little').hex().encode() ) #Add the number of rows to the main table
-            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x48, 0x4, int(stringOffsetTable2Offset).to_bytes(4, 'little').hex().encode() ) #Add the pointer to the String Offset table 2 to the main table
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x24, 0x4, jsonInfo["COLUMN_COUNT"].to_bytes(4, 'little') ) #Add the number of rows to the main table
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x48, 0x4, int(stringOffsetTable2Offset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table 2 to the main table
 
 
         #Text
         if jsonInfo['TEXT_COUNT'] > 0:
             textOffsetTableTemp = []
             for text in jsonInfo["TEXT"]: #Write Column String table and store offsets for the String offset table 2
-                textOffsetTableTemp.append(len(rebuildFileTemp)/2)
-                rebuildFileTemp += binascii.hexlify( text.encode())
-                rebuildFileTemp += b'00' #Null byte
-            rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2) #Add null bytes at the end of the String table 2
+                textOffsetTableTemp.append(len(rebuildFileTemp))
+                rebuildFileTemp += text.encode()
+                rebuildFileTemp += b'\x00' #Null byte
+            rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table 2
 
             #Text Offset Table
-            textOffsetTableOffset = len(rebuildFileTemp)/2
+            textOffsetTableOffset = len(rebuildFileTemp)
             for x in range(jsonInfo["TEXT_COUNT"]): #Write String Offset table 2
-                rebuildFileTemp += int(textOffsetTableTemp[x]).to_bytes(4, 'little').hex().encode() 
+                rebuildFileTemp += int(textOffsetTableTemp[x]).to_bytes(4, 'little') 
 
             #Text and Text Offset table pointers in Main Table
-            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x28, 0x4, jsonInfo["TEXT_COUNT"].to_bytes(4, 'little').hex().encode() ) #Add the number of rows to the main table
-            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x44, 0x4, int(textOffsetTableOffset).to_bytes(4, 'little').hex().encode() ) #Add the pointer to the String Offset table 2 to the main table
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x28, 0x4, jsonInfo["TEXT_COUNT"].to_bytes(4, 'little') ) #Add the number of rows to the main table
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x44, 0x4, int(textOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table 2 to the main table
 
 
         #ColumnTypes2
-        columnTypes2Offset = len(rebuildFileTemp)/2
+        columnTypes2Offset = len(rebuildFileTemp)
         for column in jsonInfo['COLUMN_NAMES']:
-            rebuildFileTemp += binascii.hexlify (data['columnTypes2'][column].to_bytes(1, 'little', signed = True) )
-        rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2)
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x38, 0x4, int(columnTypes2Offset).to_bytes(4, 'little').hex().encode() ) #Add pointer to the main table
+            rebuildFileTemp += data['columnTypes2'][column].to_bytes(1, 'little', signed = True)
+        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x38, 0x4, int(columnTypes2Offset).to_bytes(4, 'little') ) #Add pointer to the main table
 
 
         #ColumnTypes
-        columnTypesOffset = len(rebuildFileTemp)/2
+        columnTypesOffset = len(rebuildFileTemp)
         for column in jsonInfo['COLUMN_NAMES']:
-            rebuildFileTemp += binascii.hexlify (data['columnTypes'][column].to_bytes(1, 'little', signed = True) )
-        rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2)
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x68, 0x4, int(columnTypesOffset).to_bytes(4, 'little').hex().encode() ) #Add pointer to the main table
+            rebuildFileTemp +=  data['columnTypes'][column].to_bytes(1, 'little', signed = True) 
+        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x68, 0x4, int(columnTypesOffset).to_bytes(4, 'little') ) #Add pointer to the main table
 
 
         #Column Values
@@ -555,54 +555,54 @@ def rebuildFile ():
             if data['columnValidity'][column] != "1":
                 columnValueOffsets.append(0)
             else:
-                columnValueOffsets.append(int(len(rebuildFileTemp)/2))
+                columnValueOffsets.append(int(len(rebuildFileTemp)))
 
                 bool_bitmask = '' #Initialize the bool bitmask in case there are boolean columns
                 for row in range(0, jsonInfo['ROW_COUNT']):
                     if column not in jsonInfo['ROW_CONTENT'][row]:
-                        rebuildFileTemp += b'FFFFFFFF'
+                        rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
                     else:
 
                         if data['columnTypes'][column] == 0: #Int8 unsigned
                             value = jsonInfo['ROW_CONTENT'][row][column]
-                            rebuildFileTemp += binascii.hexlify(value.to_bytes(1, 'little', signed = False))
+                            rebuildFileTemp += value.to_bytes(1, 'little', signed = False)
 
                         elif data['columnTypes'][column] == 1: #Int16 unsigned
                             value = jsonInfo['ROW_CONTENT'][row][column]
-                            rebuildFileTemp += binascii.hexlify(value.to_bytes(2, 'little', signed = False))
+                            rebuildFileTemp += value.to_bytes(2, 'little', signed = False)
 
                         elif data['columnTypes'][column] == 2: #Int32 unsigned
                             value = jsonInfo['ROW_CONTENT'][row][column]
-                            rebuildFileTemp += binascii.hexlify(value.to_bytes(4, 'little', signed = False))
+                            rebuildFileTemp += value.to_bytes(4, 'little', signed = False)
 
                         elif data['columnTypes'][column] == 3: #Int64 unsigned
                             value = jsonInfo['ROW_CONTENT'][row][column]
-                            rebuildFileTemp += binascii.hexlify(value.to_bytes(8, 'little', signed = False))
+                            rebuildFileTemp += value.to_bytes(8, 'little', signed = False)
 
                         elif data['columnTypes'][column] == 4: #Int8 signed
                             value = jsonInfo['ROW_CONTENT'][row][column]
-                            rebuildFileTemp += binascii.hexlify(value.to_bytes(1, 'little', signed = True))
+                            rebuildFileTemp += value.to_bytes(1, 'little', signed = True)
 
                         elif data['columnTypes'][column] == 5: #Int16 signed
                             value = jsonInfo['ROW_CONTENT'][row][column]
-                            rebuildFileTemp += binascii.hexlify(value.to_bytes(2, 'little', signed = True))
+                            rebuildFileTemp += value.to_bytes(2, 'little', signed = True)
 
                         elif data['columnTypes'][column] == 6: #Int32 signed
                             value = jsonInfo['ROW_CONTENT'][row][column]
-                            rebuildFileTemp += binascii.hexlify(value.to_bytes(4, 'little', signed = True))
+                            rebuildFileTemp += value.to_bytes(4, 'little', signed = True)
 
                         elif data['columnTypes'][column] == 7: #Int64 signed
                             value = jsonInfo['ROW_CONTENT'][row][column]
-                            rebuildFileTemp += binascii.hexlify(value.to_bytes(8, 'little', signed = True))
+                            rebuildFileTemp += value.to_bytes(8, 'little', signed = True)
                         
                         elif data['columnTypes'][column] == 9: #float32
                             value = jsonInfo['ROW_CONTENT'][row][column]
                             value = bytes(bytearray(struct.pack("<f", value)))
-                            rebuildFileTemp += binascii.hexlify(value)
+                            rebuildFileTemp += value
 
                         elif data['columnTypes'][column] == 12: #String
                             index = jsonInfo['TEXT'].index(jsonInfo['ROW_CONTENT'][row][column])
-                            rebuildFileTemp += binascii.hexlify(index.to_bytes(4, 'little'))
+                            rebuildFileTemp += index.to_bytes(4, 'little')
 
                         elif data['columnTypes'][column] == 11: #Boolean
                             bit = jsonInfo['ROW_CONTENT'][row][column]
@@ -611,56 +611,56 @@ def rebuildFile ():
                             if len(bool_bitmask) == 8:
                                 bool_bitmask = bool_bitmask[::-1]
                                 bool_bitmask = int(bool_bitmask, 2).to_bytes(1, 'little')
-                                rebuildFileTemp += binascii.hexlify(bool_bitmask)
+                                rebuildFileTemp += bool_bitmask
                                 bool_bitmask = ''
                             if row == jsonInfo['ROW_COUNT']-1:
                                 bool_bitmask = bool_bitmask.ljust(8, '0')
                                 bool_bitmask = bool_bitmask[::-1]
                                 bool_bitmask = int(bool_bitmask, 2).to_bytes(1, 'little')
-                                rebuildFileTemp += binascii.hexlify(bool_bitmask)
+                                rebuildFileTemp += bool_bitmask
 
         
-                rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2)
+                rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
 
         
 
-        columnValueOffsetsOffset = len(rebuildFileTemp)/2
+        columnValueOffsetsOffset = len(rebuildFileTemp)
         for offset in columnValueOffsets:
-            rebuildFileTemp += binascii.hexlify(offset.to_bytes(4, 'little'))
+            rebuildFileTemp += offset.to_bytes(4, 'little')
         
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x3C, 0x4, int(columnValueOffsetsOffset).to_bytes(4, 'little').hex().encode() ) #Add pointer to the main table
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x3C, 0x4, int(columnValueOffsetsOffset).to_bytes(4, 'little') ) #Add pointer to the main table
 
 
         #Row Index
-        rowIndexOffset = int(len(rebuildFileTemp)/2)
+        rowIndexOffset = int(len(rebuildFileTemp))
         for row in jsonInfo['ROW_NAMES']:
-            rebuildFileTemp += binascii.hexlify(jsonInfo['ROW_NAMES'].index(row).to_bytes(4, 'little'))
-        rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2)
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x50, 0x4, int(rowIndexOffset).to_bytes(4, 'little').hex().encode() ) #Add pointer to the main table
+            rebuildFileTemp += jsonInfo['ROW_NAMES'].index(row).to_bytes(4, 'little')
+        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x50, 0x4, int(rowIndexOffset).to_bytes(4, 'little') ) #Add pointer to the main table
 
 
         #Column Index
-        columnIndexOffset = int(len(rebuildFileTemp)/2)
+        columnIndexOffset = int(len(rebuildFileTemp))
         for column in jsonInfo['COLUMN_NAMES']:
-            rebuildFileTemp += binascii.hexlify(jsonInfo['COLUMN_NAMES'].index(column).to_bytes(4, 'little'))
-        rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2)
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x54, 0x4, int(columnIndexOffset).to_bytes(4, 'little').hex().encode() ) #Add pointer to the main table
+            rebuildFileTemp += jsonInfo['COLUMN_NAMES'].index(column).to_bytes(4, 'little')
+        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x54, 0x4, int(columnIndexOffset).to_bytes(4, 'little') ) #Add pointer to the main table
             
 
         #ValidityBool        
         if jsonInfo['HAS_VALIDITYBOOL'] == True:
-            validityBoolOffset = len(rebuildFileTemp)/2
+            validityBoolOffset = len(rebuildFileTemp)
             for row in range(0, jsonInfo['ROW_COUNT']):
                 binary = jsonInfo['ROW_CONTENT'][row]['validityBool']
                 binary = int(binary, 2).to_bytes(1, 'little')
-                rebuildFileTemp += binascii.hexlify(binary)
-            rebuildFileTemp += b'00' * calculateSeparator(len(rebuildFileTemp)/2)
-            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x6C, 0x4, int(validityBoolOffset).to_bytes(4, 'little').hex().encode() ) #Add pointer to the main table
+                rebuildFileTemp += binary
+            rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x6C, 0x4, int(validityBoolOffset).to_bytes(4, 'little') ) #Add pointer to the main table
                     
 
 
         with open(file_name +'.bin', 'wb') as file:
-            file.write(binascii.unhexlify(rebuildFileTemp))
+            file.write(rebuildFileTemp)
 
 
 
