@@ -9,3 +9,8 @@ A work-in-progress **armp** .bin file exporter/importer for Dragon Engine games 
 ```"reARMP" <file>```
 
 You can also drag&drop
+
+  
+    
+### Credits
+Based on the initial research by [SlowpokeVG](https://github.com/SlowpokeVG)
