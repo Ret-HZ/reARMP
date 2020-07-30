@@ -208,11 +208,21 @@ def exportFile ():
 
     print ("\nExporting...")
 
+    #Strings 1 / Rows
+    #Check if the file has named rows
+    if pointerToStringOffsetTable != 0:
+        storeTable (pointerToStringOffsetTable, rowCount, stringOffsetTable) 
+        iteratePlainTextTable (stringTable, stringOffsetTable)
+        hasRowNames = True
 
-    storeTable (pointerToStringOffsetTable, rowCount, stringOffsetTable) #Strings 1 / Rows
-    iteratePlainTextTable (stringTable, stringOffsetTable)
+    else: #If there are no named rows, a dummy will be placed instead
+        for row in range(0, rowCount):
+            stringTable.append('')
+        hasRowNames = False
+
     storeTable (pointerToStringOffsetTable2, columnCount, stringOffsetTable2) #Strings 2 / Columns
     iteratePlainTextTable (stringTable2, stringOffsetTable2)
+
 
 
     #Columns
@@ -232,14 +242,19 @@ def exportFile ():
 
 
     #ValidityBool
-    if (pointerToBytesArray3 != 0 and pointerToBytesArray3 != fileSize): 
+    if (pointerToBytesArray3 != 0 and pointerToBytesArray3 != fileSize and pointerToBytesArray3 != -1): 
         validityBoolTable = iterateValidityBoolTable(pointerToBytesArray3, rowCount) 
     else:
         validityBoolTable = None
 
 
     #Row validity
-    row_validity = iterateBitmaskTable (pointerToBitArray1, rowCount)
+    if pointerToBitArray1 != -1:
+        row_validity = iterateBitmaskTable (pointerToBitArray1, rowCount)
+        hasRowValidity = True
+    else:
+        row_validity = None
+        hasRowValidity = False
         
 
 
@@ -250,6 +265,8 @@ def exportFile ():
     exportDict["ROW_COUNT"] = rowCount
     exportDict["COLUMN_COUNT"] = columnCount
     exportDict["TEXT_COUNT"] = textCount
+    exportDict["HAS_ROW_NAMES"] = hasRowNames
+    exportDict["HAS_ROW_VALIDITY"] = hasRowValidity
 
     exportDict.update ( getColumnInfo(pointerToBytesArray1, pointerToBytesArray2, pointerToBitsArray2, columnCount) )
 
@@ -304,12 +321,12 @@ def exportFile ():
             columnValues[column] = valueTable
             continue
 
-        if (exportDict["columnTypes"][str(column)] == 9): #float32 unsigned
+        if (exportDict["columnTypes"][str(column)] == 9): #float32
             valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<f", 4)
             columnValues[column] = valueTable
             continue
 
-        if (exportDict["columnTypes"][str(column)] == 11): #boolean unsigned
+        if (exportDict["columnTypes"][str(column)] == 11): #boolean
             valueTable = iterateBitmaskTable (columnContentOffsetTable[column_index], rowCount)
             columnValues[column] = valueTable
             continue
@@ -347,13 +364,13 @@ def exportFile ():
             columnData = {"validityBool" : validityBoolTable[row_index]}
             columnDict[row].update(columnData)
 
-
-        columnData = {"isValid" : row_validity[row_index]}
-        columnDict[row].update(columnData)
+        if (hasRowValidity is not False):
+            columnData = {"isValid" : row_validity[row_index]}
+            columnDict[row].update(columnData)
 
         
         exportDict[row_index] = columnDict
-        print ("Entry "+str(row_index) + " / "+str(rowCount))
+        print ("Entry "+str(row_index+1) + " / "+str(rowCount))
         row_index +=1
 
 
@@ -382,10 +399,15 @@ def storeJSONInfo (data):
     row_count = data['ROW_COUNT']
     column_count = data['COLUMN_COUNT']
     text_count = data['TEXT_COUNT']
+    has_row_names = data['HAS_ROW_NAMES']
+    has_row_validity = data['HAS_ROW_VALIDITY']
 
     rowNames = []
-    for entry in range(0, row_count): #Store row names
-        rowNames.append( list(data[str(entry)])[0] )
+    if has_row_names == True:
+        for entry in range(0, row_count): #Store row names
+            rowNames.append( list(data[str(entry)])[0] )
+    else:
+        rowNames = [''] * row_count
 
     columnNames = list(data['columnValidity'].keys()) #Store column names
 
@@ -410,7 +432,7 @@ def storeJSONInfo (data):
     else:
         has_validitybool = False
     
-    jsonInfo = {'ROW_COUNT' : row_count, 'COLUMN_COUNT' : column_count, 'TEXT_COUNT' : text_count, 'ROW_NAMES' : rowNames, 'COLUMN_NAMES' : columnNames, 'TEXT' : text, 'ROW_CONTENT' : rowContent, 'HAS_VALIDITYBOOL' : has_validitybool}
+    jsonInfo = {'ROW_COUNT' : row_count, 'COLUMN_COUNT' : column_count, 'TEXT_COUNT' : text_count, 'HAS_ROW_NAMES' : has_row_names, 'HAS_ROW_VALIDITY' : has_row_validity, 'ROW_NAMES' : rowNames, 'COLUMN_NAMES' : columnNames, 'TEXT' : text, 'ROW_CONTENT' : rowContent, 'HAS_VALIDITYBOOL' : has_validitybool}
     return jsonInfo
 
 
@@ -432,26 +454,27 @@ def rebuildFile ():
 
 
         #Row Validity
-        pointerToBitArray1 = len(rebuildFileTemp)
-        #rebuildFileTemp += b'\xFF' * int(math.ceil(jsonInfo["ROW_COUNT"]/8) ) # Write a dummy bitarray1 with all the flags set to 1
-        binary = ''
-        for row in range(0, jsonInfo['ROW_COUNT']):
-            bit = jsonInfo['ROW_CONTENT'][row]['isValid']
-            if len(binary) < 8:
-                binary += bit
-            if len(binary) == 8:
-                binary = binary[::-1]
-                binary = int(binary, 2).to_bytes(1, 'little')
-                rebuildFileTemp += binary
-                binary = ''
-            if row == jsonInfo['ROW_COUNT']-1:
-                binary = binary.ljust(8, '0')
-                binary = binary[::-1]
-                binary = int(binary, 2).to_bytes(1, 'little')
-                rebuildFileTemp += binary
+        if jsonInfo['HAS_ROW_VALIDITY'] == True:
+            pointerToBitArray1 = len(rebuildFileTemp)
+            #rebuildFileTemp += b'\xFF' * int(math.ceil(jsonInfo["ROW_COUNT"]/8) ) # Write a dummy bitarray1 with all the flags set to 1
+            binary = ''
+            for row in range(0, jsonInfo['ROW_COUNT']):
+                bit = jsonInfo['ROW_CONTENT'][row]['isValid']
+                if len(binary) < 8:
+                    binary += bit
+                if len(binary) == 8:
+                    binary = binary[::-1]
+                    binary = int(binary, 2).to_bytes(1, 'little')
+                    rebuildFileTemp += binary
+                    binary = ''
+                if row == jsonInfo['ROW_COUNT']-1:
+                    binary = binary.ljust(8, '0')
+                    binary = binary[::-1]
+                    binary = int(binary, 2).to_bytes(1, 'little')
+                    rebuildFileTemp += binary
 
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x34, 0x4, int(pointerToBitArray1).to_bytes(4, 'little') )
-        rebuildFileTemp += b'\x00\x00\x00\x00' + b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x34, 0x4, int(pointerToBitArray1).to_bytes(4, 'little') )
+            rebuildFileTemp += b'\x00\x00\x00\x00' + b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
 
 
         #Column Validity
@@ -478,21 +501,22 @@ def rebuildFile ():
 
 
         #Row Entries
-        stringOffsetTableTemp = []
-        for x in range(jsonInfo["ROW_COUNT"]): #Write row String table and store offsets for the String offset table
-            stringOffsetTableTemp.append(len(rebuildFileTemp))
-            rebuildFileTemp += jsonInfo["ROW_NAMES"][x].encode()
-            rebuildFileTemp += b'\x00' #Null byte
-        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table
+        if jsonInfo['HAS_ROW_NAMES'] == True:
+            stringOffsetTableTemp = []
+            for x in range(jsonInfo["ROW_COUNT"]): #Write row String table and store offsets for the String offset table
+                stringOffsetTableTemp.append(len(rebuildFileTemp))
+                rebuildFileTemp += jsonInfo["ROW_NAMES"][x].encode()
+                rebuildFileTemp += b'\x00' #Null byte
+            rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table
 
-        #Row Entries Offset Table
-        stringOffsetTableOffset = len(rebuildFileTemp)
-        for x in range(jsonInfo["ROW_COUNT"]): #Write String Offset table
-            rebuildFileTemp += int(stringOffsetTableTemp[x]).to_bytes(4, 'little')    
+            #Row Entries Offset Table
+            stringOffsetTableOffset = len(rebuildFileTemp)
+            for x in range(jsonInfo["ROW_COUNT"]): #Write String Offset table
+                rebuildFileTemp += int(stringOffsetTableTemp[x]).to_bytes(4, 'little')    
 
         #Row Entries and Row Entries Offset table pointers in Main Table
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x30, 0x4, int(stringOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table to the main table
         rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x20, 0x4, jsonInfo["ROW_COUNT"].to_bytes(4, 'little') ) #Add the number of rows to the main table
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, 0x30, 0x4, int(stringOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table to the main table
 
         
         #Column Names
