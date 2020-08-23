@@ -400,7 +400,7 @@ def exportTable(pointerToMainTable):
                 if (columnTypes[str(column)] == unused): #Skip unused columns
                     continue
 
-                if (columnTypes[str(column)] != string) and (columnTypes[str(column)] != table):
+                if (columnTypes[str(column)] != string) and (columnTypes[str(column)] != table) and (len(columnValues[column]) > 0) :
                     columnData = {str(column) : columnValues[column][row_index]}
                     columnDict[row].update(columnData)
                     continue
@@ -473,7 +473,7 @@ def exportTable(pointerToMainTable):
 
         valueSizes = {
             0 : 0x4, #uint32
-            1 : 0x4, #uint16
+            1 : 0x2, #uint16
             2 : 0x1,
             3 : 0x4,
             4 : 0x2,
@@ -483,6 +483,17 @@ def exportTable(pointerToMainTable):
             9 : 0x8,
             10 : 0x8,
             13 : 0x4
+        }
+
+        types = {
+            0 : "I", #u32
+            1 : "H", #u16
+            2 : "B", #u8
+            3 : "i", #32
+            4 : "h", #16
+            5 : "b", #8
+            7 : "f", #float32
+            8 : "Q" #u64
         }
 
 
@@ -500,12 +511,13 @@ def exportTable(pointerToMainTable):
                 column_index = stringTable2.index(column)
 
                 if columnTypes[column] != -1:
-                    value = readFromPosition(offset, valueSizes[columnTypes[column]], "<i") #TODO assign correct unpack type
-                    #print (value)
-                    columnData = {column : value}
-                    columnDict[row].update(columnData)
-                    #print (columnDict)
-                    offset += 0x4
+                    if columnTypes[column] in [0,1,2,3,4,5,7]:
+                        value = readFromPosition(offset, valueSizes[columnTypes[column]], "<"+types[columnTypes[column]]) #TODO assign correct unpack type
+                        #print (value)
+                        columnData = {column : value}
+                        columnDict[row].update(columnData)
+                        #print (columnDict)
+                        offset += 0x4
 
                 else:
                     continue
@@ -523,6 +535,11 @@ def exportTable(pointerToMainTable):
 
             if (hasRowValidity is not False):
                 columnData = {"isValid" : row_validity[row_index]}
+                columnDict[row].update(columnData)
+
+            #Row Index
+            if (len(rowIndices) != 0):
+                columnData = {"rowIndex" : rowIndices[row_index]}
                 columnDict[row].update(columnData)
 
             
@@ -668,7 +685,16 @@ def importTable (data):
     global rebuildFileTemp
 
     pointerToMainTable = len(rebuildFileTemp)
-    rebuildFileTemp += b'\x00\x00\x00\x00'*20 #Set the main table to all zeros for now
+    #Initialize empty main table
+    rebuildFileTemp += b'\x00\x00\x00\x00'*3
+    rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
+    rebuildFileTemp += b'\x00\x00\x00\x00'
+    rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
+    rebuildFileTemp += b'\x00\x00\x00\x00'*5
+    rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
+    rebuildFileTemp += b'\x00\x00\x00\x00'*2
+    rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
+    rebuildFileTemp += b'\x00\x00\x00\x00'*5
 
     #Row Validity
     if jsonInfo['HAS_ROW_VALIDITY'] == True:
