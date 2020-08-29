@@ -640,8 +640,11 @@ def storeJSONInfo (data):
                             text.append(string)
     text_count = len(text)
 
-    if 'validityBool' in rowContent[0]:
-        has_validitybool = True
+    if row_count > 0:
+        if 'validityBool' in rowContent[0]:
+            has_validitybool = True
+        else:
+            has_validitybool = False
     else:
         has_validitybool = False
     
