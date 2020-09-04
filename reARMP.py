@@ -168,6 +168,8 @@ def exportTable(pointerToMainTable):
     ValidityBoolTable = []
     rowIndices = []
     columnIndices = []
+    unknownOffsetTable = []
+    unknownBitmask = []
 
     rowCount =                      readFromPosition (pointerToMainTable + 0x0, 0x4, "<i")
     columnCount =                   readFromPosition (pointerToMainTable + 0x4, 0x4, "<i")
@@ -182,6 +184,7 @@ def exportTable(pointerToMainTable):
     pointerToIntArray3 =            readFromPosition (pointerToMainTable + 0x34, 0x4, "<i")
     pointerToBitsArray2 =           readFromPosition (pointerToMainTable + 0x38, 0x4, "<i")
     pointerToAnotherTable =         readFromPosition (pointerToMainTable + 0x3C, 0x4, "<i")
+    pointerToBitmaskOffsetTable =   readFromPosition (pointerToMainTable + 0x44, 0x4, "<i")
     pointerToBytesArray2 =          readFromPosition (pointerToMainTable + 0x48, 0x4, "<i")
     pointerToBytesArray3 =          readFromPosition (pointerToMainTable + 0x4C, 0x4, "<i")
 
@@ -201,6 +204,7 @@ def exportTable(pointerToMainTable):
     print ("Pointer to Int Array Table 3: " + str(pointerToIntArray3))
     print ("Pointer to Bit Array Table 2: " + str(pointerToBitsArray2))
     print ("Pointer to Another Table: " + str(pointerToAnotherTable))
+    print ("Pointer to Unknown Bitmask Pointer Table: " + str(pointerToBitmaskOffsetTable))
     print ("Pointer to Column Type Table: " + str(pointerToBytesArray2))
     print ("Pointer to Byte Array Table 3: " + str(pointerToBytesArray3))
 
@@ -288,6 +292,20 @@ def exportTable(pointerToMainTable):
         columnIndices = iterateValueTable(pointerToIntArray3, columnCount, "<i", 4)
 
 
+    #Unknown Bitmask
+    if (pointerToBitmaskOffsetTable != -1) and (pointerToBitmaskOffsetTable != 0):
+        unknownOffsetTable = iterateValueTable(pointerToBitmaskOffsetTable, columnCount, "<i", 4)
+        for offset in unknownOffsetTable:
+            if offset != 0 and offset != -1:
+                bitmask = iterateBitmaskTable (offset, rowCount)
+                unknownBitmask.append(bitmask)
+            else:
+                dummy = []
+                unknownBitmask.append(dummy)
+        hasUnknownBitmask = True
+    else:
+        hasUnknownBitmask = False
+
 
     # Fill the dictionary
     exportDict["ROW_COUNT"] = rowCount
@@ -297,6 +315,7 @@ def exportTable(pointerToMainTable):
     exportDict["HAS_COLUMN_NAMES"] = hasColumnNames
     exportDict["HAS_ROW_VALIDITY"] = hasRowValidity
     exportDict["HAS_COLUMN_VALIDITY"] = hasColumnValidity
+    exportDict["HAS_UNKNOWN_BITMASK"] = hasUnknownBitmask
     exportDict["HAS_ROW_INDICES"] = hasRowIndices
     exportDict.update ( getColumnInfo(pointerToBytesArray1, pointerToBytesArray2, pointerToBitsArray2, columnCount, stringTable2) )
     if (len(columnIndices) != 0):
@@ -386,7 +405,7 @@ def exportTable(pointerToMainTable):
                 columnValues[column] = valueTable
                 continue
 
-        
+
 
         row_index = 0
         for row in stringTable: #Element per row
@@ -399,6 +418,10 @@ def exportTable(pointerToMainTable):
 
                 if (columnTypes[str(column)] == unused): #Skip unused columns
                     continue
+
+                if len(unknownBitmask) > 0 and len(unknownBitmask[column_index]) > 0: #Unknown Bitmask
+                    columnData = {str(column)+"_unknownBool" : unknownBitmask[column_index][row_index]}
+                    columnDict[row].update(columnData)
 
                 if (columnTypes[str(column)] != string) and (columnTypes[str(column)] != table) and (len(columnValues[column]) > 0) :
                     columnData = {str(column) : columnValues[column][row_index]}
@@ -609,11 +632,12 @@ def storeJSONInfo (data):
     has_row_validity = data['HAS_ROW_VALIDITY']
     has_column_validity = data['HAS_COLUMN_VALIDITY']
     has_row_indices = data['HAS_ROW_INDICES']
+    has_unknown_bitmask = data['HAS_UNKNOWN_BITMASK']
     if 'COLUMN_INDICES' in data:
         column_indices = data['COLUMN_INDICES']
     else:
         column_indices = None
-
+    
     rowNames = []
     if has_row_names == True:
         for entry in range(0, row_count): #Store row names
@@ -649,7 +673,8 @@ def storeJSONInfo (data):
         has_validitybool = False
     
     jsonInfo = {'ROW_COUNT' : row_count, 'COLUMN_COUNT' : column_count, 'TEXT_COUNT' : text_count, 'HAS_ROW_NAMES' : has_row_names, 'HAS_COLUMN_NAMES' : has_column_names, 'HAS_ROW_VALIDITY' : has_row_validity,
-    'HAS_COLUMN_VALIDITY' : has_column_validity, 'HAS_ROW_INDICES' : has_row_indices, 'COLUMN_INDICES' : column_indices, 'ROW_NAMES' : rowNames, 'COLUMN_NAMES' : columnNames, 'TEXT' : text, 'ROW_CONTENT' : rowContent, 'HAS_VALIDITYBOOL' : has_validitybool}
+    'HAS_COLUMN_VALIDITY' : has_column_validity, 'HAS_ROW_INDICES' : has_row_indices, 'COLUMN_INDICES' : column_indices, 'ROW_NAMES' : rowNames, 'COLUMN_NAMES' : columnNames, 'TEXT' : text, 'ROW_CONTENT' : rowContent,
+     'HAS_VALIDITYBOOL' : has_validitybool, 'HAS_UNKNOWN_BITMASK' : has_unknown_bitmask}
     return jsonInfo
 
 
@@ -942,6 +967,41 @@ def importTable (data):
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x34, 0x4, int(columnIndexOffset).to_bytes(4, 'little') ) #Add pointer to the main table
 
 
+    #Unknown Bitmask TODO
+    if jsonInfo['HAS_UNKNOWN_BITMASK'] == True:
+        bitmaskOffsetTable = []
+        for column in range(0, jsonInfo['COLUMN_COUNT']):
+            column_name = jsonInfo['COLUMN_NAMES'][column]
+            if str(column_name+"_unknownBool") in jsonInfo['ROW_CONTENT'][0]: #Check entry 0 to look for bitmasks
+                binary = ''
+                pointerToColumnBitmask = len(rebuildFileTemp)
+                for row in range(jsonInfo['ROW_COUNT']):
+                    bit = jsonInfo['ROW_CONTENT'][row][column_name+"_unknownBool"]
+                    if len(binary) < 8:
+                        binary += bit
+                    if len(binary) == 8:
+                        binary = binary[::-1]
+                        binary = int(binary, 2).to_bytes(1, 'little')
+                        rebuildFileTemp += binary
+                        binary = ''
+                    if row == jsonInfo['ROW_COUNT']-1:
+                        binary = binary.ljust(8, '0')
+                        binary = binary[::-1]
+                        binary = int(binary, 2).to_bytes(1, 'little')
+                        rebuildFileTemp += binary
+                bitmaskOffsetTable.append(pointerToColumnBitmask)
+            else:
+                bitmaskOffsetTable.append(0)
+
+        rebuildFileTemp += b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
+        pointerToBitmaskOffsetTable = len(rebuildFileTemp) 
+        for offset in bitmaskOffsetTable:
+            rebuildFileTemp += offset.to_bytes(4, 'little')
+
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x44, 0x4, int(pointerToBitmaskOffsetTable).to_bytes(4, 'little') )
+        rebuildFileTemp += b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
+
+
     #ValidityBool        
     if jsonInfo['HAS_VALIDITYBOOL'] == True:
         validityBoolOffset = len(rebuildFileTemp)
@@ -958,7 +1018,6 @@ def importTable (data):
         offset = len(rebuildFileTemp)
         importTable (data['subTable'])
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x3C, 0x4, int(offset).to_bytes(4, 'little') ) #Add pointer to the main table
-
 
 
 
