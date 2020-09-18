@@ -261,14 +261,10 @@ def exportTable(pointerToMainTable):
 
 
     #Columns
-    storageMode = 0 #How data is stored. This only affects v2 armps. 0 = per column, 1 = per row
+    storageMode = readFromPosition(pointerToMainTable + 0x23, 1, "<B") #How data is stored. This only affects v2 armps. 0 = per column, 1 = per row
     columnContentOffsetTable = []
     if (columnCount > 0):
-        if readFromPosition(pointerToIntArray1, 4, "<i") == 0:
-            storeTable (pointerToIntArray1, columnCount, columnContentOffsetTable)
-        else:
-            storeTable (pointerToIntArray1, rowCount, columnContentOffsetTable)
-            storageMode = 1
+        storeTable (pointerToIntArray1, columnCount, columnContentOffsetTable) 
         offsetTable = []
         for offset in columnContentOffsetTable:
             offsetTable.append(swapEndian(offset, "<I"))
@@ -489,9 +485,6 @@ def exportTable(pointerToMainTable):
                 columnDict[row].update(columnData)
 
 
-
-
-
             exportDict[row_index] = columnDict
             print ("Entry "+str(row_index+1) + " / "+str(rowCount))
             row_index +=1
@@ -655,9 +648,6 @@ def exportTable(pointerToMainTable):
                     columnDict[row].update(columnData)
 
 
-
-
-
                 exportDict[row_index] = columnDict
                 print ("Entry "+str(row_index+1) + " / "+str(rowCount))
                 row_index +=1
@@ -723,12 +713,18 @@ def exportTable(pointerToMainTable):
                             columnData = {column : value}
                             columnDict[row].update(columnData)
 
-                        if columnTypes[column] == string:
+                        if columnTypes[column] == string: #String
                             index = readFromPosition(offset + columnInfo[column_index][1], 4, "<i")
                             if (index == 0):
                                 continue
                             columnData = {str(column) : textTable[index]}
                             columnDict[row].update(columnData)
+
+                        if columnTypes[column] == table: #Table
+                            pointer = readFromPosition(offset + columnInfo[column_index][1], 4, "<I")
+                            if pointer != 0 and pointer != -1:
+                                columnData = {str(column) : exportTable(pointer)}
+                                columnDict[row].update(columnData)
 
                     else:
                         continue
@@ -752,6 +748,11 @@ def exportTable(pointerToMainTable):
                 exportDict[row_index] = rowExport
                 print ("Entry "+str(row_index+1) + " / "+str(rowCount))
                 row_index += 1
+
+            #subTable
+            if pointerToAnotherTable != 0 and pointerToAnotherTable != -1:
+                subTable = exportTable(pointerToAnotherTable)
+                exportDict['subTable'] = subTable
 
             return exportDict
 
