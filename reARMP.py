@@ -23,6 +23,14 @@ def readFromPosition (offset, size, value_type):
 
 
 
+def readFromPositionTarget (target ,offset, size, value_type):
+    valueToRead=(binascii.unhexlify(target[offset*2:(offset+size)*2]))
+    valueToRead=struct.unpack(value_type,valueToRead)
+    valueToRead=functools.reduce(lambda rst, d: rst * 10 + d, (valueToRead))
+    return valueToRead
+
+
+
 def writeToPosition (target, offset, size, value):
     target[offset:offset + size] = value
     return target
@@ -84,13 +92,12 @@ def getColumnValueTextTableIndex (pointerToTable, numberOfEntries, row_index):
     table = hexFile[(pointerToTable*2):(pointerToTable + numberOfEntries*4)*2]
     table = [table[i:i+(4*2)] for i in range(0, len(table), (4*2))]
     index = table[row_index]    
-    if (index == b'ffffffff'):
+    if version == 1 and index == b'ffffffff':
         return -1
     else:
         index = swapEndian(index, "<I")
         return index
         
-
 
 
 def iterateValueTable (pointerToTable, numberOfEntries, valueType, valueSize):
@@ -153,6 +160,21 @@ def getColumnInfo (pointerToBytesArray1, pointerToBytesArray2, pointerToBitsArra
     if version == 1:
         columnInfo["columnTypes2"] = columnTypes2
     return columnInfo
+
+
+
+def getColumnInfoTable (pointerToTable, numberOfEntries):
+    table = hexFile[(pointerToTable*2):(pointerToTable + numberOfEntries*16)*2]
+    offset = 0
+    returnList = []
+    for column in range(numberOfEntries):
+        typeValue = readFromPositionTarget(table, offset, 4, "<i")
+        offsetShift = readFromPositionTarget(table, offset+4, 4, "<i")
+        specialSize = readFromPositionTarget(table, offset+8, 4, "<i")
+        columnData = [typeValue, offsetShift, specialSize]
+        returnList.append(columnData)
+        offset += 16
+    return returnList
 
 
 
@@ -239,9 +261,14 @@ def exportTable(pointerToMainTable):
 
 
     #Columns
+    storageMode = 0 #How data is stored. This only affects v2 armps. 0 = per column, 1 = per row
     columnContentOffsetTable = []
     if (columnCount > 0):
-        storeTable (pointerToIntArray1, columnCount, columnContentOffsetTable) 
+        if readFromPosition(pointerToIntArray1, 4, "<i") == 0:
+            storeTable (pointerToIntArray1, columnCount, columnContentOffsetTable)
+        else:
+            storeTable (pointerToIntArray1, rowCount, columnContentOffsetTable)
+            storageMode = 1
         offsetTable = []
         for offset in columnContentOffsetTable:
             offsetTable.append(swapEndian(offset, "<I"))
@@ -308,6 +335,8 @@ def exportTable(pointerToMainTable):
 
 
     # Fill the dictionary
+    if version == 2:
+        exportDict["STORAGE_MODE"] = storageMode
     exportDict["ROW_COUNT"] = rowCount
     exportDict["COLUMN_COUNT"] = columnCount
     exportDict["TEXT_COUNT"] = textCount
@@ -446,17 +475,17 @@ def exportTable(pointerToMainTable):
 
             #Add the validityBool if present
             if (validityBoolTable is not None): 
-                columnData = {"validityBool" : validityBoolTable[row_index]}
+                columnData = {'reARMP_validityBool' : validityBoolTable[row_index]}
                 columnDict[row].update(columnData)
 
             #Row Validity
             if (hasRowValidity is not False):
-                columnData = {"isValid" : row_validity[row_index]}
+                columnData = {'reARMP_isValid' : row_validity[row_index]}
                 columnDict[row].update(columnData)
 
             #Row Index
             if (len(rowIndices) != 0):
-                columnData = {"rowIndex" : rowIndices[row_index]}
+                columnData = {'reARMP_rowIndex' : rowIndices[row_index]}
                 columnDict[row].update(columnData)
 
 
@@ -476,7 +505,7 @@ def exportTable(pointerToMainTable):
         return exportDict
 
 
-############################################################################################################ TODO
+############################################################################################################ TODO Storage mode 0 code needs cleanup. v2 arrays need to be implemented
     #Judgment
     if version == 2: 
         columnTypes = exportDict["columnTypes"]
@@ -490,97 +519,241 @@ def exportTable(pointerToMainTable):
         int32 = 3
         int64 = 10
         float32 = 7
+        float64 = 11
         boolean = 6
         string = 13
         table = 9
 
-        valueSizes = {
-            0 : 0x4, #uint32
-            1 : 0x2, #uint16
-            2 : 0x1,
-            3 : 0x4,
-            4 : 0x2,
-            5 : 0x1,
-            7 : 0x4,
-            8 : 0x8,
-            9 : 0x8,
-            10 : 0x8,
-            13 : 0x4
-        }
-
-        types = {
-            0 : "I", #u32
-            1 : "H", #u16
-            2 : "B", #u8
-            3 : "i", #32
-            4 : "h", #16
-            5 : "b", #8
-            7 : "f", #float32
-            8 : "Q" #u64
-        }
 
 
-        row_index = 0
-        columnDict = OrderedDict() #Column contents
-        for row in stringTable:
-            
-            columnDict[row] = {}
 
-            #table = hexFile[columnContentOffsetTable[row_index] : ] #TODO
+        #columnDict = OrderedDict() #Column contents
 
+        if storageMode == 0:
 
-            offset = columnContentOffsetTable[row_index]
+            columnValues = {}
             for column in stringTable2:
                 column_index = stringTable2.index(column)
 
-                if columnTypes[column] != -1:
-                    if columnTypes[column] in [0,1,2,3,4,5,7]:
-                        value = readFromPosition(offset, valueSizes[columnTypes[column]], "<"+types[columnTypes[column]]) #TODO assign correct unpack type
-                        #print (value)
-                        columnData = {column : value}
-                        columnDict[row].update(columnData)
-                        #print (columnDict)
-                        offset += 0x4
+                if (columnTypes[str(column)] == unused): #Skip unused columns
+                    emptyList = []
+                    columnValues[column] = emptyList
+                    continue
 
-                else:
+                if (columnTypes[str(column)] == uint8): #Int8 unsigned
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<B", 1)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == uint16): #Int16 unsigned
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<H", 2)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == uint32): #Int32 unsigned
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<I", 4)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == uint64): #Int64 unsigned
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<Q", 8)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == int8): #Int8 signed
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<b", 1)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == int16): #Int16 signed
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<h", 2)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == int32): #Int32 unsigned
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<i", 4)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == int64): #Int64 unsigned
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<q", 8)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == float32): #float32
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<f", 4)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == float64): #float64
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<d", 8)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == boolean): #boolean
+                    valueTable = iterateBitmaskTable (columnContentOffsetTable[column_index], rowCount)
+                    columnValues[column] = valueTable
+                    continue
+
+                if (columnTypes[str(column)] == table): #Table
+                    valueTable = iterateValueTable (columnContentOffsetTable[column_index], rowCount, "<q", 8)
+                    columnValues[column] = valueTable
                     continue
 
 
 
-            
-        
+            row_index = 0
+            for row in stringTable: #Element per row
+                columnDict = OrderedDict() #Column contents
+                columnDict[row] = {}
 
 
-            #Add the validityBool if present
-            if (validityBoolTable is not None): 
-                columnData = {"validityBool" : validityBoolTable[row_index]}
-                columnDict[row].update(columnData)
+                for column in stringTable2: #Iterate through each column
+                    column_index = stringTable2.index(column)
 
-            if (hasRowValidity is not False):
-                columnData = {"isValid" : row_validity[row_index]}
-                columnDict[row].update(columnData)
+                    if (columnTypes[str(column)] == unused): #Skip unused columns
+                        continue
 
-            #Row Index
-            if (len(rowIndices) != 0):
-                columnData = {"rowIndex" : rowIndices[row_index]}
-                columnDict[row].update(columnData)
+                    if len(unknownBitmask) > 0 and len(unknownBitmask[column_index]) > 0: #Unknown Bitmask
+                        columnData = {str(column)+"_unknownBool" : unknownBitmask[column_index][row_index]}
+                        columnDict[row].update(columnData)
 
-            
-            rowExport = {}
-            rowExport[str(row)] = columnDict[row]
-            exportDict[row_index] = rowExport
-            print ("Entry "+str(row_index+1) + " / "+str(rowCount))
+                    if (columnTypes[str(column)] != string) and (columnTypes[str(column)] != table) and (len(columnValues[column]) > 0) :
+                        columnData = {str(column) : columnValues[column][row_index]}
+                        columnDict[row].update(columnData)
+                        continue
+
+                    if (columnTypes[str(column)] == string): #String
+                        index = getColumnValueTextTableIndex (columnContentOffsetTable[column_index], rowCount, row_index)
+                        if (index == -1):
+                            continue
+                        columnData = {str(column) : textTable[index]}
+                        columnDict[row].update(columnData)
+                        continue
+
+                    if (columnTypes[str(column)] == table): #Table
+                        pointer = columnValues[column][row_index]
+                        if pointer != 0 and pointer != -1:
+                            columnData = {str(column) : exportTable(pointer)}
+                            columnDict[row].update(columnData)
 
 
-            row_index += 1
+
+                #Add the validityBool if present
+                if (validityBoolTable is not None): 
+                    columnData = {'reARMP_validityBool' : validityBoolTable[row_index]}
+                    columnDict[row].update(columnData)
+
+                #Row Validity
+                if (hasRowValidity is not False):
+                    columnData = {'reARMP_isValid' : row_validity[row_index]}
+                    columnDict[row].update(columnData)
+
+                #Row Index
+                if (len(rowIndices) != 0):
+                    columnData = {'reARMP_rowIndex' : rowIndices[row_index]}
+                    columnDict[row].update(columnData)
 
 
 
-        return exportDict
+
+
+                exportDict[row_index] = columnDict
+                print ("Entry "+str(row_index+1) + " / "+str(rowCount))
+                row_index +=1
+
+
+            #subTable
+            if pointerToAnotherTable != 0 and pointerToAnotherTable != -1:
+                subTable = exportTable(pointerToAnotherTable)
+                exportDict['subTable'] = subTable
+
+            return exportDict
 
 
 
 
+        if storageMode == 1:
+
+            valueSizes = {
+                0 : 0x4, #uint32
+                1 : 0x2, #uint16
+                2 : 0x1, #int8
+                3 : 0x4, #int32
+                4 : 0x2, #int16
+                5 : 0x1, #int8
+                7 : 0x4, #float32
+                6 : 0x1, #bool
+                8 : 0x8, #uint64
+                9 : 0x8, #table
+                10 : 0x8, #int64
+                11 : 0x8, #float64
+                13 : 0x4 #String
+            }
+
+            types = {
+                0 : "I", #u32
+                1 : "H", #u16
+                2 : "B", #u8
+                3 : "i", #32
+                4 : "h", #16
+                5 : "b", #8
+                6 : "b", #bool
+                7 : "f", #float32
+                8 : "Q", #u64
+                11 : "d", #float64
+                10 : "q" #64
+            }
+
+            columnDict = OrderedDict() #Column contents
+            columnInfo = getColumnInfoTable (pointerToBytesArray2, columnCount)
+            row_index = 0
+            for row in stringTable:
+                
+                columnDict[row] = {}
+
+                offset = columnContentOffsetTable[row_index]
+                for column in stringTable2:
+                    column_index = stringTable2.index(column)
+
+                    if columnTypes[column] != -1:
+                        if columnTypes[column] in [0,1,2,3,4,5,6,7,8,10,11]:
+                            value = readFromPosition(offset + columnInfo[column_index][1], valueSizes[columnTypes[column]], "<"+types[columnTypes[column]])
+
+                            columnData = {column : value}
+                            columnDict[row].update(columnData)
+
+                        if columnTypes[column] == string:
+                            index = readFromPosition(offset + columnInfo[column_index][1], 4, "<i")
+                            if (index == 0):
+                                continue
+                            columnData = {str(column) : textTable[index]}
+                            columnDict[row].update(columnData)
+
+                    else:
+                        continue
+
+                #Add the validityBool if present
+                if (validityBoolTable is not None): 
+                    columnData = {'reARMP_validityBool' : validityBoolTable[row_index]}
+                    columnDict[row].update(columnData)
+
+                if (hasRowValidity is not False):
+                    columnData = {'reARMP_isValid' : row_validity[row_index]}
+                    columnDict[row].update(columnData)
+
+                #Row Index
+                if (len(rowIndices) != 0):
+                    columnData = {'reARMP_rowIndex' : rowIndices[row_index]}
+                    columnDict[row].update(columnData)
+                
+                rowExport = {}
+                rowExport[str(row)] = columnDict[row]
+                exportDict[row_index] = rowExport
+                print ("Entry "+str(row_index+1) + " / "+str(rowCount))
+                row_index += 1
+
+            return exportDict
 
 
 
@@ -605,21 +778,6 @@ def exportFile ():
 
     with open(file_name +'.json', 'w', encoding='utf8') as file:
         json.dump(exportDict, file, indent=2, ensure_ascii=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -665,7 +823,7 @@ def storeJSONInfo (data):
     text_count = len(text)
 
     if row_count > 0:
-        if 'validityBool' in rowContent[0]:
+        if 'reARMP_validityBool' in rowContent[0]:
             has_validitybool = True
         else:
             has_validitybool = False
@@ -729,7 +887,7 @@ def importTable (data):
         pointerToBitArray1 = len(rebuildFileTemp)
         binary = ''
         for row in range(0, jsonInfo['ROW_COUNT']):
-            bit = jsonInfo['ROW_CONTENT'][row]['isValid']
+            bit = jsonInfo['ROW_CONTENT'][row]['reARMP_isValid']
             if len(binary) < 8:
                 binary += bit
             if len(binary) == 8:
@@ -953,7 +1111,7 @@ def importTable (data):
     if jsonInfo['HAS_ROW_INDICES'] == True:
         rowIndexOffset = int(len(rebuildFileTemp))
         for row in range(jsonInfo['ROW_COUNT']):
-            rebuildFileTemp += jsonInfo['ROW_CONTENT'][row]['rowIndex'].to_bytes(4, 'little', signed=True)
+            rebuildFileTemp += jsonInfo['ROW_CONTENT'][row]['reARMP_rowIndex'].to_bytes(4, 'little', signed=True)
         rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x30, 0x4, int(rowIndexOffset).to_bytes(4, 'little') ) #Add pointer to the main table
 
@@ -1006,7 +1164,7 @@ def importTable (data):
     if jsonInfo['HAS_VALIDITYBOOL'] == True:
         validityBoolOffset = len(rebuildFileTemp)
         for row in range(0, jsonInfo['ROW_COUNT']):
-            binary = jsonInfo['ROW_CONTENT'][row]['validityBool']
+            binary = jsonInfo['ROW_CONTENT'][row]['reARMP_validityBool']
             binary = int(binary, 2).to_bytes(1, 'little')
             rebuildFileTemp += binary
         rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
