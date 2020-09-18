@@ -264,7 +264,10 @@ def exportTable(pointerToMainTable):
     storageMode = readFromPosition(pointerToMainTable + 0x23, 1, "<B") #How data is stored. This only affects v2 armps. 0 = per column, 1 = per row
     columnContentOffsetTable = []
     if (columnCount > 0):
-        storeTable (pointerToIntArray1, columnCount, columnContentOffsetTable) 
+        if storageMode == 1:
+            storeTable (pointerToIntArray1, rowCount, columnContentOffsetTable)
+        else:
+            storeTable (pointerToIntArray1, columnCount, columnContentOffsetTable)
         offsetTable = []
         for offset in columnContentOffsetTable:
             offsetTable.append(swapEndian(offset, "<I"))
