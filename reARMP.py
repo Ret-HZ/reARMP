@@ -136,25 +136,25 @@ def iterateBitmaskTable (pointerToTable, numberOfEntries):
 
 
 
-def getColumnInfo (pointerToBytesArray1, pointerToBytesArray2, pointerToBitsArray2, columnCount, stringTable2):
+def getColumnInfo (pointerToColumnDataTypes, pointerToColumnDataTypesAux, pointerToColumnValidity, columnCount, columnNames):
     columnInfo = OrderedDict()
     columnValidity = OrderedDict()
     columnTypes = OrderedDict()
     columnTypes2 = OrderedDict()
-    types = iterateValueTable (pointerToBytesArray1, columnCount, "<b", 1)
-    types2 = iterateValueTable (pointerToBytesArray2, columnCount, "<b", 1)
-    if pointerToBitsArray2 != -1:
-        validity = iterateBitmaskTable (pointerToBitsArray2, columnCount)
+    types = iterateValueTable (pointerToColumnDataTypes, columnCount, "<b", 1)
+    types2 = iterateValueTable (pointerToColumnDataTypesAux, columnCount, "<b", 1)
+    if pointerToColumnValidity != -1:
+        validity = iterateBitmaskTable (pointerToColumnValidity, columnCount)
     iterator = 0
 
-    for column in stringTable2:
-        if pointerToBitsArray2 != -1 and pointerToBitsArray2 != 0:
+    for column in columnNames:
+        if pointerToColumnValidity != -1 and pointerToColumnValidity != 0:
             columnValidity[column] = validity[iterator]
         columnTypes[column] = types[iterator]
         columnTypes2[column] = types2[iterator]
         iterator += 1
 
-    if pointerToBitsArray2 != -1 and pointerToBitsArray2 != 0:
+    if pointerToColumnValidity != -1 and pointerToColumnValidity != 0:
         columnInfo["columnValidity"] = columnValidity
     columnInfo["columnTypes"] = columnTypes
     if version == 1:
@@ -180,10 +180,10 @@ def getColumnInfoTable (pointerToTable, numberOfEntries):
 
 def exportTable(pointerToMainTable):
     exportDict = OrderedDict()
-    stringOffsetTable = []
-    stringTable = []
-    stringOffsetTable2 = []
-    stringTable2 = []
+    rowNamesOffsetTable = []
+    rowNamesTable = []
+    columnNamesOffsetTable = []
+    columnNames = []
     textOffsetTable = []
     textTable = []
     columnContentOffsetTable = []
@@ -193,22 +193,22 @@ def exportTable(pointerToMainTable):
     unknownOffsetTable = []
     unknownBitmask = []
 
-    rowCount =                      readFromPosition (pointerToMainTable + 0x0, 0x4, "<i")
-    columnCount =                   readFromPosition (pointerToMainTable + 0x4, 0x4, "<i")
-    textCount =                     readFromPosition (pointerToMainTable + 0x8, 0x4, "<i")
-    pointerToStringOffsetTable =    readFromPosition (pointerToMainTable + 0x10, 0x4, "<i")
-    pointerToBitArray1 =            readFromPosition (pointerToMainTable + 0x14, 0x4, "<i")
-    pointerToBytesArray1 =          readFromPosition (pointerToMainTable + 0x18, 0x4, "<i")
-    pointerToIntArray1 =            readFromPosition (pointerToMainTable + 0x1C, 0x4, "<i")
-    pointerToTextOffsetTable =      readFromPosition (pointerToMainTable + 0x24, 0x4, "<i")
-    pointerToStringOffsetTable2 =   readFromPosition (pointerToMainTable + 0x28, 0x4, "<i")
-    pointerToIntArray2 =            readFromPosition (pointerToMainTable + 0x30, 0x4, "<i")
-    pointerToIntArray3 =            readFromPosition (pointerToMainTable + 0x34, 0x4, "<i")
-    pointerToBitsArray2 =           readFromPosition (pointerToMainTable + 0x38, 0x4, "<i")
-    pointerToAnotherTable =         readFromPosition (pointerToMainTable + 0x3C, 0x4, "<i")
-    pointerToBitmaskOffsetTable =   readFromPosition (pointerToMainTable + 0x44, 0x4, "<i")
-    pointerToBytesArray2 =          readFromPosition (pointerToMainTable + 0x48, 0x4, "<i")
-    pointerToBytesArray3 =          readFromPosition (pointerToMainTable + 0x4C, 0x4, "<i")
+    rowCount =                          readFromPosition (pointerToMainTable + 0x0, 0x4, "<i")
+    columnCount =                       readFromPosition (pointerToMainTable + 0x4, 0x4, "<i")
+    textCount =                         readFromPosition (pointerToMainTable + 0x8, 0x4, "<i")
+    pointerToRowNamesOffsetTable =      readFromPosition (pointerToMainTable + 0x10, 0x4, "<i")
+    pointerToRowValidity =              readFromPosition (pointerToMainTable + 0x14, 0x4, "<i")
+    pointerToColumnDataTypes =          readFromPosition (pointerToMainTable + 0x18, 0x4, "<i")
+    pointerToColumnContentOffsetTable = readFromPosition (pointerToMainTable + 0x1C, 0x4, "<i")
+    pointerToTextOffsetTable =          readFromPosition (pointerToMainTable + 0x24, 0x4, "<i")
+    pointerToColumnNamesOffsetTable =   readFromPosition (pointerToMainTable + 0x28, 0x4, "<i")
+    pointerToRowIndices =               readFromPosition (pointerToMainTable + 0x30, 0x4, "<i")
+    pointerToColumnIndices =            readFromPosition (pointerToMainTable + 0x34, 0x4, "<i")
+    pointerToColumnValidity =           readFromPosition (pointerToMainTable + 0x38, 0x4, "<i")
+    pointerToSubTable =                 readFromPosition (pointerToMainTable + 0x3C, 0x4, "<i")
+    pointerToBitmaskOffsetTable =       readFromPosition (pointerToMainTable + 0x44, 0x4, "<i")
+    pointerToColumnDataTypesAux =       readFromPosition (pointerToMainTable + 0x48, 0x4, "<i")
+    pointerToValidityBool =             readFromPosition (pointerToMainTable + 0x4C, 0x4, "<i")
 
 
     #DEBUG OUTPUT
@@ -216,45 +216,45 @@ def exportTable(pointerToMainTable):
     print ("Row Count: " + str(rowCount))
     print ("Column Count: " + str(columnCount))
     print ("Text Count: " + str(textCount))
-    print ("Pointer to String Offset Table: " + str(pointerToStringOffsetTable))
-    print ("Pointer to Bits Array Table: " + str(pointerToBitArray1))
-    print ("Pointer to Byte Array Table: " + str(pointerToBytesArray1))
-    print ("Pointer to Int Array Table: " + str(pointerToIntArray1))
+    print ("Pointer to Row Names Offset Table: " + str(pointerToRowNamesOffsetTable))
+    print ("Pointer to Row Validity Array: " + str(pointerToRowValidity))
+    print ("Pointer to Column Data Types: " + str(pointerToColumnDataTypes))
+    print ("Pointer to Column Content Offset Table: " + str(pointerToColumnContentOffsetTable))
     print ("Pointer to Text Offset Table: " + str(pointerToTextOffsetTable))
-    print ("Pointer to String Offset Table 2: " + str(pointerToStringOffsetTable2))
-    print ("Pointer to Int Array Table 2: " + str(pointerToIntArray2))
-    print ("Pointer to Int Array Table 3: " + str(pointerToIntArray3))
-    print ("Pointer to Bit Array Table 2: " + str(pointerToBitsArray2))
-    print ("Pointer to Another Table: " + str(pointerToAnotherTable))
+    print ("Pointer to Column Names Offset Table: " + str(pointerToColumnNamesOffsetTable))
+    print ("Pointer to Row Index Array: " + str(pointerToRowIndices))
+    print ("Pointer to Column Index Array: " + str(pointerToColumnIndices))
+    print ("Pointer to Column Validity Array: " + str(pointerToColumnValidity))
+    print ("Pointer to SubTable: " + str(pointerToSubTable))
     print ("Pointer to Unknown Bitmask Pointer Table: " + str(pointerToBitmaskOffsetTable))
-    print ("Pointer to Column Type Table: " + str(pointerToBytesArray2))
-    print ("Pointer to Byte Array Table 3: " + str(pointerToBytesArray3))
+    print ("Pointer to Auxiliary Column Data Types: " + str(pointerToColumnDataTypesAux))
+    print ("Pointer to ValidityBool Array: " + str(pointerToValidityBool))
 
     print ("\nExporting...")
 
     #Strings 1 / Rows
     #Check if the file has named rows
-    if pointerToStringOffsetTable != 0:
-        storeTable (pointerToStringOffsetTable, rowCount, stringOffsetTable) 
-        iteratePlainTextTable (stringTable, stringOffsetTable)
+    if pointerToRowNamesOffsetTable != 0:
+        storeTable (pointerToRowNamesOffsetTable, rowCount, rowNamesOffsetTable) 
+        iteratePlainTextTable (rowNamesTable, rowNamesOffsetTable)
         hasRowNames = True
 
     else: #If there are no named rows, a dummy will be placed instead
         for row in range(0, rowCount):
-            stringTable.append('')
+            rowNamesTable.append('')
         hasRowNames = False
 
 
     #Strings 2 / Columns
     #Check if the file has named columns
-    if pointerToStringOffsetTable2 != 0:
-        storeTable (pointerToStringOffsetTable2, columnCount, stringOffsetTable2) 
-        iteratePlainTextTable (stringTable2, stringOffsetTable2)
+    if pointerToColumnNamesOffsetTable != 0:
+        storeTable (pointerToColumnNamesOffsetTable, columnCount, columnNamesOffsetTable) 
+        iteratePlainTextTable (columnNames, columnNamesOffsetTable)
         hasColumnNames = True
 
     else: #If there are no named columns, a dummy will be placed instead
         for column in range(0, columnCount):
-            stringTable2.append(str(column))
+            columnNames.append(str(column))
         hasColumnNames = False
 
 
@@ -265,9 +265,9 @@ def exportTable(pointerToMainTable):
     columnContentOffsetTable = []
     if (columnCount > 0):
         if storageMode == 1:
-            storeTable (pointerToIntArray1, rowCount, columnContentOffsetTable)
+            storeTable (pointerToColumnContentOffsetTable, rowCount, columnContentOffsetTable)
         else:
-            storeTable (pointerToIntArray1, columnCount, columnContentOffsetTable)
+            storeTable (pointerToColumnContentOffsetTable, columnCount, columnContentOffsetTable)
         offsetTable = []
         for offset in columnContentOffsetTable:
             offsetTable.append(swapEndian(offset, "<I"))
@@ -281,15 +281,15 @@ def exportTable(pointerToMainTable):
 
 
     #ValidityBool
-    if (pointerToBytesArray3 != 0 and pointerToBytesArray3 != -1): 
-        validityBoolTable = iterateValidityBoolTable(pointerToBytesArray3, rowCount) 
+    if (pointerToValidityBool != 0 and pointerToValidityBool != -1): 
+        validityBoolTable = iterateValidityBoolTable(pointerToValidityBool, rowCount) 
     else:
         validityBoolTable = None
 
 
     #Row validity
-    if (pointerToBitArray1 != -1) and (pointerToBitArray1 != 0):
-        row_validity = iterateBitmaskTable (pointerToBitArray1, rowCount)
+    if (pointerToRowValidity != -1) and (pointerToRowValidity != 0):
+        row_validity = iterateBitmaskTable (pointerToRowValidity, rowCount)
         hasRowValidity = True
     else:
         row_validity = None
@@ -297,8 +297,8 @@ def exportTable(pointerToMainTable):
         
 
     #Column validity
-    if (pointerToBitsArray2 != -1) and (pointerToBitsArray2 != 0):
-        column_validity = iterateBitmaskTable (pointerToBitsArray2, rowCount)
+    if (pointerToColumnValidity != -1) and (pointerToColumnValidity != 0):
+        column_validity = iterateBitmaskTable (pointerToColumnValidity, rowCount)
         hasColumnValidity = True
     else:
         column_validity = None
@@ -306,16 +306,16 @@ def exportTable(pointerToMainTable):
 
 
     #Row Index number
-    if (pointerToIntArray2 != -1) and (pointerToIntArray2 != 0):
-        rowIndices = iterateValueTable(pointerToIntArray2, rowCount, "<i", 4)
+    if (pointerToRowIndices != -1) and (pointerToRowIndices != 0):
+        rowIndices = iterateValueTable(pointerToRowIndices, rowCount, "<i", 4)
         hasRowIndices = True
     else:
         hasRowIndices = False
 
 
     #Column Indices
-    if (pointerToIntArray3 != -1) and (pointerToIntArray3 != 0):
-        columnIndices = iterateValueTable(pointerToIntArray3, columnCount, "<i", 4)
+    if (pointerToColumnIndices != -1) and (pointerToColumnIndices != 0):
+        columnIndices = iterateValueTable(pointerToColumnIndices, columnCount, "<i", 4)
 
 
     #Unknown Bitmask
@@ -345,7 +345,7 @@ def exportTable(pointerToMainTable):
     exportDict["HAS_COLUMN_VALIDITY"] = hasColumnValidity
     exportDict["HAS_UNKNOWN_BITMASK"] = hasUnknownBitmask
     exportDict["HAS_ROW_INDICES"] = hasRowIndices
-    exportDict.update ( getColumnInfo(pointerToBytesArray1, pointerToBytesArray2, pointerToBitsArray2, columnCount, stringTable2) )
+    exportDict.update ( getColumnInfo(pointerToColumnDataTypes, pointerToColumnDataTypesAux, pointerToColumnValidity, columnCount, columnNames) )
     if (len(columnIndices) != 0):
         exportDict["COLUMN_INDICES"] = columnIndices
 
@@ -370,8 +370,8 @@ def exportTable(pointerToMainTable):
 
 
         columnValues = {}
-        for column in stringTable2:
-            column_index = stringTable2.index(column)
+        for column in columnNames:
+            column_index = columnNames.index(column)
 
             if (columnTypes[str(column)] == unused): #Skip unused columns
                 emptyList = []
@@ -436,13 +436,13 @@ def exportTable(pointerToMainTable):
 
 
         row_index = 0
-        for row in stringTable: #Element per row
+        for row in rowNamesTable: #Element per row
             columnDict = OrderedDict() #Column contents
             columnDict[row] = {}
 
 
-            for column in stringTable2: #Iterate through each column
-                column_index = stringTable2.index(column)
+            for column in columnNames: #Iterate through each column
+                column_index = columnNames.index(column)
 
                 if (columnTypes[str(column)] == unused): #Skip unused columns
                     continue
@@ -494,8 +494,8 @@ def exportTable(pointerToMainTable):
 
 
         #subTable
-        if pointerToAnotherTable != 0 and pointerToAnotherTable != -1:
-            subTable = exportTable(pointerToAnotherTable)
+        if pointerToSubTable != 0 and pointerToSubTable != -1:
+            subTable = exportTable(pointerToSubTable)
             exportDict['subTable'] = subTable
 
         return exportDict
@@ -528,8 +528,8 @@ def exportTable(pointerToMainTable):
         if storageMode == 0:
 
             columnValues = {}
-            for column in stringTable2:
-                column_index = stringTable2.index(column)
+            for column in columnNames:
+                column_index = columnNames.index(column)
 
                 if (columnTypes[str(column)] == unused): #Skip unused columns
                     emptyList = []
@@ -599,13 +599,13 @@ def exportTable(pointerToMainTable):
 
 
             row_index = 0
-            for row in stringTable: #Element per row
+            for row in rowNamesTable: #Element per row
                 columnDict = OrderedDict() #Column contents
                 columnDict[row] = {}
 
 
-                for column in stringTable2: #Iterate through each column
-                    column_index = stringTable2.index(column)
+                for column in columnNames: #Iterate through each column
+                    column_index = columnNames.index(column)
 
                     if (columnTypes[str(column)] == unused): #Skip unused columns
                         continue
@@ -657,8 +657,8 @@ def exportTable(pointerToMainTable):
 
 
             #subTable
-            if pointerToAnotherTable != 0 and pointerToAnotherTable != -1:
-                subTable = exportTable(pointerToAnotherTable)
+            if pointerToSubTable != 0 and pointerToSubTable != -1:
+                subTable = exportTable(pointerToSubTable)
                 exportDict['subTable'] = subTable
 
             return exportDict
@@ -699,15 +699,15 @@ def exportTable(pointerToMainTable):
             }
 
             columnDict = OrderedDict() #Column contents
-            columnInfo = getColumnInfoTable (pointerToBytesArray2, columnCount)
+            columnInfo = getColumnInfoTable (pointerToColumnDataTypesAux, columnCount)
             row_index = 0
-            for row in stringTable:
+            for row in rowNamesTable:
                 
                 columnDict[row] = {}
 
                 offset = columnContentOffsetTable[row_index]
-                for column in stringTable2:
-                    column_index = stringTable2.index(column)
+                for column in columnNames:
+                    column_index = columnNames.index(column)
 
                     if columnTypes[column] != -1:
                         if columnTypes[column] in [0,1,2,3,4,5,6,7,8,10,11]:
@@ -753,8 +753,8 @@ def exportTable(pointerToMainTable):
                 row_index += 1
 
             #subTable
-            if pointerToAnotherTable != 0 and pointerToAnotherTable != -1:
-                subTable = exportTable(pointerToAnotherTable)
+            if pointerToSubTable != 0 and pointerToSubTable != -1:
+                subTable = exportTable(pointerToSubTable)
                 exportDict['subTable'] = subTable
 
             return exportDict
@@ -888,7 +888,7 @@ def importTable (data):
 
     #Row Validity
     if jsonInfo['HAS_ROW_VALIDITY'] == True:
-        pointerToBitArray1 = len(rebuildFileTemp)
+        pointerToRowValidity = len(rebuildFileTemp)
         binary = ''
         for row in range(0, jsonInfo['ROW_COUNT']):
             bit = jsonInfo['ROW_CONTENT'][row]['reARMP_isValid']
@@ -905,7 +905,7 @@ def importTable (data):
                 binary = int(binary, 2).to_bytes(1, 'little')
                 rebuildFileTemp += binary
 
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x14, 0x4, int(pointerToBitArray1).to_bytes(4, 'little') )
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x14, 0x4, int(pointerToRowValidity).to_bytes(4, 'little') )
         rebuildFileTemp += b'\x00\x00\x00\x00' + b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
 
 
@@ -934,40 +934,40 @@ def importTable (data):
 
     #Row Entries
     if jsonInfo['HAS_ROW_NAMES'] == True:
-        stringOffsetTableTemp = []
+        rowNamesOffsetTableTemp = []
         for x in range(jsonInfo["ROW_COUNT"]): #Write row String table and store offsets for the String offset table
-            stringOffsetTableTemp.append(len(rebuildFileTemp))
+            rowNamesOffsetTableTemp.append(len(rebuildFileTemp))
             rebuildFileTemp += jsonInfo["ROW_NAMES"][x].encode()
             rebuildFileTemp += b'\x00' #Null byte
         rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table
 
         #Row Entries Offset Table
-        stringOffsetTableOffset = len(rebuildFileTemp)
+        rowNamesOffsetTableOffset = len(rebuildFileTemp)
         for x in range(jsonInfo["ROW_COUNT"]): #Write String Offset table
-            rebuildFileTemp += int(stringOffsetTableTemp[x]).to_bytes(4, 'little')    
+            rebuildFileTemp += int(rowNamesOffsetTableTemp[x]).to_bytes(4, 'little')    
 
     #Row Entries and Row Entries Offset table pointers in Main Table
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x10, 0x4, int(stringOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table to the main table
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x10, 0x4, int(rowNamesOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table to the main table
     rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x0, 0x4, jsonInfo["ROW_COUNT"].to_bytes(4, 'little') ) #Add the number of rows to the main table
 
     
     #Column Names
     if jsonInfo['COLUMN_COUNT'] > 0:
         if jsonInfo['HAS_COLUMN_NAMES'] == True:
-            stringOffsetTable2Temp = []
+            columnNamesOffsetTableTemp = []
             for x in range(jsonInfo["COLUMN_COUNT"]): #Write Column String table and store offsets for the String offset table 2
-                stringOffsetTable2Temp.append(len(rebuildFileTemp))
+                columnNamesOffsetTableTemp.append(len(rebuildFileTemp))
                 rebuildFileTemp += jsonInfo["COLUMN_NAMES"][x].encode()
                 rebuildFileTemp += b'\x00' #Null byte
             rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table 2
 
             #Column Names Offset Table
-            stringOffsetTable2Offset = len(rebuildFileTemp)
+            columnNamesOffsetTableOffset = len(rebuildFileTemp)
             for x in range(jsonInfo["COLUMN_COUNT"]): #Write String Offset table 2
-                rebuildFileTemp += int(stringOffsetTable2Temp[x]).to_bytes(4, 'little') 
+                rebuildFileTemp += int(columnNamesOffsetTableTemp[x]).to_bytes(4, 'little') 
 
         #Column Names and Column Names Offset table pointers in Main Table
-            rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x28, 0x4, int(stringOffsetTable2Offset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table 2 to the main table
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x28, 0x4, int(columnNamesOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the String Offset table 2 to the main table
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x4, 0x4, jsonInfo["COLUMN_COUNT"].to_bytes(4, 'little') ) #Add the number of columns to the main table
 
 
