@@ -187,7 +187,6 @@ def exportTable(pointerToMainTable):
     textOffsetTable = []
     textTable = []
     columnContentOffsetTable = []
-    ValidityBoolTable = []
     rowIndices = []
     columnIndices = []
     unknownOffsetTable = []
@@ -196,12 +195,14 @@ def exportTable(pointerToMainTable):
     rowCount =                          readFromPosition (pointerToMainTable + 0x0, 0x4, "<i")
     columnCount =                       readFromPosition (pointerToMainTable + 0x4, 0x4, "<i")
     textCount =                         readFromPosition (pointerToMainTable + 0x8, 0x4, "<i")
+    rowValidator =                      readFromPosition (pointerToMainTable + 0xC, 0x4, "<i")
     pointerToRowNamesOffsetTable =      readFromPosition (pointerToMainTable + 0x10, 0x4, "<i")
     pointerToRowValidity =              readFromPosition (pointerToMainTable + 0x14, 0x4, "<i")
     pointerToColumnDataTypes =          readFromPosition (pointerToMainTable + 0x18, 0x4, "<i")
     pointerToColumnContentOffsetTable = readFromPosition (pointerToMainTable + 0x1C, 0x4, "<i")
     pointerToTextOffsetTable =          readFromPosition (pointerToMainTable + 0x24, 0x4, "<i")
     pointerToColumnNamesOffsetTable =   readFromPosition (pointerToMainTable + 0x28, 0x4, "<i")
+    columnValidator =                   readFromPosition (pointerToMainTable + 0x2C, 0x4, "<i")
     pointerToRowIndices =               readFromPosition (pointerToMainTable + 0x30, 0x4, "<i")
     pointerToColumnIndices =            readFromPosition (pointerToMainTable + 0x34, 0x4, "<i")
     pointerToColumnValidity =           readFromPosition (pointerToMainTable + 0x38, 0x4, "<i")
@@ -209,6 +210,7 @@ def exportTable(pointerToMainTable):
     pointerToBitmaskOffsetTable =       readFromPosition (pointerToMainTable + 0x44, 0x4, "<i")
     pointerToColumnDataTypesAux =       readFromPosition (pointerToMainTable + 0x48, 0x4, "<i")
     pointerToValidityBool =             readFromPosition (pointerToMainTable + 0x4C, 0x4, "<i")
+
 
 
     #DEBUG OUTPUT
@@ -229,6 +231,9 @@ def exportTable(pointerToMainTable):
     print ("Pointer to Unknown Bitmask Pointer Table: " + str(pointerToBitmaskOffsetTable))
     print ("Pointer to Auxiliary Column Data Types: " + str(pointerToColumnDataTypesAux))
     print ("Pointer to ValidityBool Array: " + str(pointerToValidityBool))
+    print ("Row Validator: " + str(rowValidator))
+    print ("Column Validator: " + str(columnValidator))
+
 
     print ("\nExporting...")
 
@@ -339,6 +344,8 @@ def exportTable(pointerToMainTable):
     exportDict["ROW_COUNT"] = rowCount
     exportDict["COLUMN_COUNT"] = columnCount
     exportDict["TEXT_COUNT"] = textCount
+    exportDict["ROW_VALIDATOR"] = rowValidator
+    exportDict["COLUMN_VALIDATOR"] = columnValidator
     exportDict["HAS_ROW_NAMES"] = hasRowNames
     exportDict["HAS_COLUMN_NAMES"] = hasColumnNames
     exportDict["HAS_ROW_VALIDITY"] = hasRowValidity
@@ -876,15 +883,10 @@ def importTable (data):
 
     pointerToMainTable = len(rebuildFileTemp)
     #Initialize empty main table
-    rebuildFileTemp += b'\x00\x00\x00\x00'*3
-    rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
-    rebuildFileTemp += b'\x00\x00\x00\x00'
-    rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
-    rebuildFileTemp += b'\x00\x00\x00\x00'*5
-    rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
-    rebuildFileTemp += b'\x00\x00\x00\x00'*2
-    rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
-    rebuildFileTemp += b'\x00\x00\x00\x00'*5
+    rebuildFileTemp += b'\x00\x00\x00\x00'*20
+
+    rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0xC, 0x4, int(data["ROW_VALIDATOR"]).to_bytes(4, 'little', signed=True) )
+    rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x2C, 0x4, int(data["COLUMN_VALIDATOR"]).to_bytes(4, 'little', signed=True) )
 
     #Row Validity
     if jsonInfo['HAS_ROW_VALIDITY'] == True:
@@ -907,11 +909,13 @@ def importTable (data):
 
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x14, 0x4, int(pointerToRowValidity).to_bytes(4, 'little') )
         rebuildFileTemp += b'\x00\x00\x00\x00' + b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
+    else:
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x14, 0x4, b'\xFF\xFF\xFF\xFF' )
 
 
     #Column Validity
     if jsonInfo['HAS_COLUMN_VALIDITY'] == True:
-        pointerToBitArray2 = len(rebuildFileTemp)
+        pointerToColumnValidity = len(rebuildFileTemp)
         binary = ''
         for column in range(0, jsonInfo['COLUMN_COUNT']):
             bit = data['columnValidity'][jsonInfo['COLUMN_NAMES'][column]]
@@ -928,8 +932,10 @@ def importTable (data):
                 binary = int(binary, 2).to_bytes(1, 'little')
                 rebuildFileTemp += binary
         
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x38, 0x4, int(pointerToBitArray2).to_bytes(4, 'little') )
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x38, 0x4, int(pointerToColumnValidity).to_bytes(4, 'little') )
         rebuildFileTemp += b'\x00'*calculateSeparator(len(rebuildFileTemp)) #Padding
+    else:
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x38, 0x4, b'\xFF\xFF\xFF\xFF' )
 
 
     #Row Entries
@@ -971,25 +977,6 @@ def importTable (data):
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x4, 0x4, jsonInfo["COLUMN_COUNT"].to_bytes(4, 'little') ) #Add the number of columns to the main table
 
 
-    #Text
-    if jsonInfo['TEXT_COUNT'] > 0:
-        textOffsetTableTemp = []
-        for text in jsonInfo["TEXT"]: #Write Text table and store offsets for the Text offset table
-            textOffsetTableTemp.append(len(rebuildFileTemp))
-            rebuildFileTemp += text.encode()
-            rebuildFileTemp += b'\x00' #Null byte
-        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table 2
-
-        #Text Offset Table
-        textOffsetTableOffset = len(rebuildFileTemp)
-        for x in range(jsonInfo["TEXT_COUNT"]): #Write String Offset table 2
-            rebuildFileTemp += int(textOffsetTableTemp[x]).to_bytes(4, 'little')
-
-        #Text and Text Offset table pointers in Main Table
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x8, 0x4, jsonInfo["TEXT_COUNT"].to_bytes(4, 'little') ) #Add the number of text entries to the main table
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x24, 0x4, int(textOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the Text Offset table to the main table
-
-
     #ColumnTypes2
     if version == 1:
         columnTypes2Offset = len(rebuildFileTemp)
@@ -1008,12 +995,34 @@ def importTable (data):
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x48, 0x4, int(columnTypesOffset).to_bytes(4, 'little') ) #Add pointer to the main table
 
 
+    #Text
+    if jsonInfo['TEXT_COUNT'] > 0:
+        textOffsetTableTemp = []
+        for text in jsonInfo["TEXT"]: #Write Text table and store offsets for the Text offset table
+            textOffsetTableTemp.append(len(rebuildFileTemp))
+            rebuildFileTemp += text.encode()
+            rebuildFileTemp += b'\x00' #Null byte
+        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp)) #Add null bytes at the end of the String table 2
+
+        #Text Offset Table
+        textOffsetTableOffset = len(rebuildFileTemp)
+        for x in range(jsonInfo["TEXT_COUNT"]): #Write String Offset table 2
+            rebuildFileTemp += int(textOffsetTableTemp[x]).to_bytes(4, 'little')
+
+        #Text and Text Offset table pointers in Main Table
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x8, 0x4, jsonInfo["TEXT_COUNT"].to_bytes(4, 'little') ) #Add the number of text entries to the main table
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x24, 0x4, int(textOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the Text Offset table to the main table
+    else:
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x24, 0x4, int(columnTypes2Offset).to_bytes(4, 'little'))
+
     #Column Values
     if version == 1:
         columnValueOffsets = []
         tableOffsets = [] #Table pointers
         tables = [] #Tables
+        unusedColumns = {} #Used to check if a column goes unused even though being marked as valid
         for column in jsonInfo['COLUMN_NAMES']:
+            unusedColumns[column] = 0 #Set the unused counter to 0 to increase and compare later
             if jsonInfo['HAS_COLUMN_VALIDITY'] == True and data['columnValidity'][column] != "1":
                 columnValueOffsets.append(0)
             else:
@@ -1021,8 +1030,9 @@ def importTable (data):
 
                 bool_bitmask = '' #Initialize the bool bitmask in case there are boolean columns
                 for row in range(0, jsonInfo['ROW_COUNT']):
-                    if column not in jsonInfo['ROW_CONTENT'][row]:
-                        if data['columnTypes2'][str(column)] == 13:
+                    if column not in jsonInfo['ROW_CONTENT'][row]: #This will generate trash in some cases (booleans marked as valid that go unused)
+                        unusedColumns[column] += 1
+                        if data['columnTypes2'][str(column)] == 13: 
                             rebuildFileTemp += b'\x00\x00\x00\x00\x00\x00\x00\x00'
                         else:
                             rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
@@ -1097,9 +1107,13 @@ def importTable (data):
                 rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
 
         
+        for column in unusedColumns:
+            if unusedColumns[column] == jsonInfo['ROW_COUNT'] and data['columnTypes2'][column] == 11: #This only applies to booleans (?)
+                columnValueOffsets[jsonInfo['COLUMN_NAMES'].index(column)] = -1
+
         columnValueOffsetsOffset = len(rebuildFileTemp)
         for offset in columnValueOffsets:
-            rebuildFileTemp += offset.to_bytes(4, 'little')
+            rebuildFileTemp += offset.to_bytes(4, 'little', signed=True)
         
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x1C, 0x4, int(columnValueOffsetsOffset).to_bytes(4, 'little') ) #Add column content offset table pointer to the main table
 
@@ -1180,6 +1194,7 @@ def importTable (data):
         offset = len(rebuildFileTemp)
         importTable (data['subTable'])
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x3C, 0x4, int(offset).to_bytes(4, 'little') ) #Add pointer to the main table
+
 
 
 
