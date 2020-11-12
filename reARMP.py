@@ -508,7 +508,7 @@ def exportTable(pointerToMainTable):
         return exportDict
 
 
-############################################################################################################ TODO Storage mode 0 code needs cleanup. v2 arrays need to be implemented
+############################################################################################################ TODO Storage mode 0 code needs cleanup. v2 arrays for storage mode 0 need to be implemented
     #Judgment
     if version == 2: 
         columnTypes = exportDict["columnTypes"]
@@ -526,6 +526,22 @@ def exportTable(pointerToMainTable):
         boolean = 6
         string = 13
         table = 9
+        arrays = [
+            14, #uint8
+            15, #uint16
+            16, #uint32
+            17, #uint64
+            18, #int8
+            19, #int16
+            20, #int32
+            21, #int64
+            22, #string
+            23, #table
+            25, #float32
+            26, #float64
+            27, #vf128
+            29 #bool
+        ]
 
 
 
@@ -719,7 +735,6 @@ def exportTable(pointerToMainTable):
                     if columnTypes[column] != -1:
                         if columnTypes[column] in [0,1,2,3,4,5,6,7,8,10,11]:
                             value = readFromPosition(offset + columnInfo[column_index][1], valueSizes[columnTypes[column]], "<"+types[columnTypes[column]])
-
                             columnData = {column : value}
                             columnDict[row].update(columnData)
 
@@ -735,6 +750,11 @@ def exportTable(pointerToMainTable):
                             if pointer != 0 and pointer != -1:
                                 columnData = {str(column) : exportTable(pointer)}
                                 columnDict[row].update(columnData)
+
+                        if columnTypes[column] in arrays: #Arrays
+                            arrayLength = columnInfo[column_index][2]
+                            columnData = {column : arrayLength}
+                            columnDict[row].update(columnData)
 
                     else:
                         continue
@@ -826,11 +846,13 @@ def storeJSONInfo (data):
     if text_count > 0: #Store Text
         for entry in range(0, row_count):
             for column in columnNames:
-                if data['columnTypes2'][column] == 12:
+                if (version == 1 and data['columnTypes2'][column] == 12) or (version == 2 and data['columnTypes'][column] == 13):
                     if column in data[str(entry)][rowNames[entry]]:
                         string = data[str(entry)][rowNames[entry]][str(column)]
                         if string not in text:
                             text.append(string)
+        if version == 2 and data['STORAGE_MODE'] == 1:
+            text.insert(0, '')
     text_count = len(text)
 
     if row_count > 0:
@@ -862,6 +884,62 @@ def rebuildFile ():
 
 
 
+def generateColumnDataTypesAuxTable (columnTypes, sizes, arraySizes):
+    dataTypesAuxTable = b''
+    distanceFromStart = 0
+
+    auxTypes = {
+        # TODO
+        #Column types value : Aux table value
+        0 : 2,
+        1 : 3,
+        2 : 4,
+        3 : 6,
+        4 : 7,
+        5 : 8,
+        6 : 4,
+        7 : 10,
+        #8 : ? uint64
+        9 : 13,
+        10 : 5,
+        #11 : ? float64
+        13 : 12,
+        14 : 14,
+        15 : 15,
+        16 : 16,
+        17 : 17,
+        18 : 18,
+        19 : 19,
+        20 : 20,
+        21 : 21,
+        22 : 22,
+        23 : 23,
+        25 : 25,
+        26 : 26,
+        27 : 27,
+        29 : 29
+    }
+
+    for columnName, columnType in columnTypes.items():
+        if columnType != -1:
+            dataTypesAuxTable += auxTypes[columnType].to_bytes(4, 'little', signed=True) #Type
+            dataTypesAuxTable += distanceFromStart.to_bytes(4, 'little', signed=True) #Distance from start
+            distanceFromStart += sizes[columnType]
+            if columnName in arraySizes: #Array Size
+                dataTypesAuxTable += arraySizes[columnName].to_bytes(4, 'little', signed=True)
+            else:
+                dataTypesAuxTable += b'\x00\x00\x00\x00'
+            dataTypesAuxTable += b'\x00\x00\x00\x00' #Unknown/Placeholder
+
+        else:
+            dataTypesAuxTable += b'\x00\x00\x00\x00'
+            dataTypesAuxTable += b'\xFF\xFF\xFF\xFF'
+            dataTypesAuxTable += b'\x00\x00\x00\x00'*2
+
+    return dataTypesAuxTable
+
+
+
 def initializeRebuildFile (ver, revision):
     global rebuildFileTemp
     global version
@@ -885,6 +963,7 @@ def importTable (data):
     #Initialize empty main table
     rebuildFileTemp += b'\x00\x00\x00\x00'*20
 
+    rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x23, 0x1, int(data["STORAGE_MODE"]).to_bytes(1, 'little', signed=True) )
     rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0xC, 0x4, int(data["ROW_VALIDATOR"]).to_bytes(4, 'little', signed=True) )
     rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x2C, 0x4, int(data["COLUMN_VALIDATOR"]).to_bytes(4, 'little', signed=True) )
 
@@ -977,20 +1056,19 @@ def importTable (data):
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x4, 0x4, jsonInfo["COLUMN_COUNT"].to_bytes(4, 'little') ) #Add the number of columns to the main table
 
 
-    #ColumnTypes2
-    if version == 1:
-        columnTypes2Offset = len(rebuildFileTemp)
-        for column in jsonInfo['COLUMN_NAMES']:
-            rebuildFileTemp += data['columnTypes'][column].to_bytes(1, 'little', signed = True)
-        rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x18, 0x4, int(columnTypes2Offset).to_bytes(4, 'little') ) #Add pointer to the main table
-
-
     #ColumnTypes
-    if version == 1:
+    columnTypes2Offset = len(rebuildFileTemp)
+    for column in jsonInfo['COLUMN_NAMES']:
+        rebuildFileTemp += data['columnTypes'][column].to_bytes(1, 'little', signed = True)
+    rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
+    rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x18, 0x4, int(columnTypes2Offset).to_bytes(4, 'little') ) #Add pointer to the main table
+
+
+    #ColumnTypesAux
+    if version == 1: #Only used in v1, for v2 we will create the Auxiliary table once values have been written
         columnTypesOffset = len(rebuildFileTemp)
         for column in jsonInfo['COLUMN_NAMES']:
-            rebuildFileTemp +=  data['columnTypes2'][column].to_bytes(1, 'little', signed = True) 
+            rebuildFileTemp +=  data['columnTypes2'][column].to_bytes(1, 'little', signed = True)
         rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x48, 0x4, int(columnTypesOffset).to_bytes(4, 'little') ) #Add pointer to the main table
 
@@ -1014,6 +1092,7 @@ def importTable (data):
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x24, 0x4, int(textOffsetTableOffset).to_bytes(4, 'little') ) #Add the pointer to the Text Offset table to the main table
     else:
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x24, 0x4, int(columnTypes2Offset).to_bytes(4, 'little'))
+
 
     #Column Values
     if version == 1:
@@ -1118,6 +1197,209 @@ def importTable (data):
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x1C, 0x4, int(columnValueOffsetsOffset).to_bytes(4, 'little') ) #Add column content offset table pointer to the main table
 
 
+
+    if version == 2:
+        columnValueOffsets = []
+        tableOffsets = [] #Table pointers
+        tables = [] #Tables
+        bool_bitmask = '' #Initialize the bool bitmask in case there are boolean columns
+        
+        arrays = [
+            14, #uint8
+            15, #uint16
+            16, #uint32
+            17, #uint64
+            18, #int8
+            19, #int16
+            20, #int32
+            21, #int64
+            22, #string
+            23, #table
+            25, #float32
+            26, #float64
+            27, #vf128
+            29 #bool
+        ]
+
+        sizes = {
+            # "Type in table 1" : size
+            0 : 0x4, #uint32
+            1 : 0x2, #uint16
+            2 : 0x1, #uint8
+            3 : 0x4, #int32
+            4 : 0x2, #int16
+            5 : 0x1, #int8
+            6 : 0x1, #bool
+            7 : 0x4, #float32
+            8 : 0x8, #uint64
+            9 : 0x8, #table pointer
+            10 : 0x8, #int64
+            11 : 0x8, #float64
+            13 : 0x8, #string pointer
+            14 : 0x0, #uint8 array 
+            15 : 0x0, #uint16 array 
+            16 : 0x0, #uint32 array 
+            17 : 0x0, #uint64 array 
+            18 : 0x0, #uint8 array 
+            19 : 0x0, #uint16 array 
+            20 : 0x0, #uint32 array 
+            21 : 0x0, #uint64 array 
+            22 : 0x0, #string array 
+            23 : 0x0, #table array 
+            25 : 0x0, #float32 array 
+            26 : 0x0, #float64 array 
+            27 : 0x0, #vf128 
+            29 : 0x0 #bool array 
+        }
+
+        signeds = {
+            0 : False,
+            1 : False,
+            2 : False,
+            3 : True,
+            4 : True,
+            5 : True,
+            6 : False,
+            8 : False,
+            10 : True
+        }
+
+        arraySizes = {} #Column name : size (value)
+
+        if data['STORAGE_MODE'] == 0:
+            unusedColumns = {} #Used to check if a column goes unused even though being marked as valid
+            for column in jsonInfo['COLUMN_NAMES']:
+                unusedColumns[column] = 0 #Set the unused counter to 0 to increase and compare later
+                if jsonInfo['HAS_COLUMN_VALIDITY'] == True and data['columnValidity'][column] != "1":
+                    columnValueOffsets.append(0)
+                else:
+                    columnValueOffsets.append(int(len(rebuildFileTemp)))
+
+                    bool_bitmask = '' #Initialize the bool bitmask in case there are boolean columns
+                    for row in range(0, jsonInfo['ROW_COUNT']):
+                        if column not in jsonInfo['ROW_CONTENT'][row]: #This will generate trash in some cases (booleans marked as valid that go unused)
+                            unusedColumns[column] += 1
+                            if data['columnTypes'][str(column)] == 9: 
+                                rebuildFileTemp += b'\x00\x00\x00\x00\x00\x00\x00\x00'
+                            else:
+                                rebuildFileTemp += b'\xFF\xFF\xFF\xFF'
+                        else:
+
+                            if data['columnTypes'][column] in [0,1,2,3,4,5,8,10]: #No specials or floats
+                                value = jsonInfo['ROW_CONTENT'][row][column]
+                                rebuildFileTemp += value.to_bytes(sizes[data['columnTypes'][column]], 'little', signed = signeds[data['columnTypes'][column]])
+
+                            
+                            elif data['columnTypes'][column] == 7: #float32
+                                value = jsonInfo['ROW_CONTENT'][row][column]
+                                value = bytes(bytearray(struct.pack("<f", value)))
+                                rebuildFileTemp += value
+
+                            elif data['columnTypes'][column] == 11: #float64
+                                value = jsonInfo['ROW_CONTENT'][row][column]
+                                value = bytes(bytearray(struct.pack("<d", value)))
+                                rebuildFileTemp += value
+
+                            elif data['columnTypes'][column] == 13: #String
+                                index = jsonInfo['TEXT'].index(jsonInfo['ROW_CONTENT'][row][column])
+                                rebuildFileTemp += index.to_bytes(4, 'little')
+
+                            elif data['columnTypes'][column] == 6: #Boolean
+                                bit = jsonInfo['ROW_CONTENT'][row][column]
+                                if len(bool_bitmask) < 8:
+                                    bool_bitmask += bit
+                                if len(bool_bitmask) == 8:
+                                    bool_bitmask = bool_bitmask[::-1]
+                                    bool_bitmask = int(bool_bitmask, 2).to_bytes(1, 'little', signed=False)
+                                    rebuildFileTemp += bool_bitmask
+                                    bool_bitmask = ''
+                                if row == jsonInfo['ROW_COUNT']-1:
+                                    bool_bitmask = bool_bitmask.ljust(8, '0')
+                                    bool_bitmask = bool_bitmask[::-1]
+                                    bool_bitmask = int(bool_bitmask, 2).to_bytes(1, 'little', signed=False)
+                                    rebuildFileTemp += bool_bitmask
+
+                            elif data['columnTypes'][column] == 9: #Table
+                                #Generate a dummy offset list and store the pointers. Write the subtables and update the dummy list with the right pointers
+                                    offset = len(rebuildFileTemp)
+                                    tableOffsets.append(offset)
+                                    dummy = b'\x00\x00\x00\x00\x00\x00\x00\x00'
+                                    rebuildFileTemp += dummy
+                                    value = jsonInfo['ROW_CONTENT'][row][column]
+                                    tables.append(value)
+
+
+                    rebuildFileTemp += b'\x00' * calculateSeparator(len(rebuildFileTemp))
+
+            
+            for column in unusedColumns:
+                if unusedColumns[column] == jsonInfo['ROW_COUNT'] and data['columnTypes'][column] == 6: #This only applies to booleans (?)
+                    columnValueOffsets[jsonInfo['COLUMN_NAMES'].index(column)] = -1
+
+            columnValueOffsetsOffset = len(rebuildFileTemp)
+            for offset in columnValueOffsets:
+                rebuildFileTemp += offset.to_bytes(4, 'little', signed=True)
+            
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x1C, 0x4, int(columnValueOffsetsOffset).to_bytes(4, 'little') ) #Add column content offset table pointer to the main table
+
+
+        if data['STORAGE_MODE'] == 1:
+            for row in range(jsonInfo['ROW_COUNT']):
+                columnValueOffsets.append(int(len(rebuildFileTemp)))
+
+                for column in jsonInfo['COLUMN_NAMES']:
+                    if column not in jsonInfo['ROW_CONTENT'][row]:
+                        if data['columnTypes'][str(column)] == 13: 
+                            rebuildFileTemp += b'\x00\x00\x00\x00\x00\x00\x00\x00'
+                        if data['columnTypes'][str(column)] == 9: 
+                            rebuildFileTemp += b'\x00\x00\x00\x00\x00\x00\x00\x00'
+                    else:
+                        if jsonInfo['HAS_COLUMN_VALIDITY'] == True and data['columnValidity'][column] != "1":
+                            continue
+                        else:
+                            if data['columnTypes'][column] in [0,1,2,3,4,5,6,8,10]: #No specials or floats
+                                value = jsonInfo['ROW_CONTENT'][row][column]
+                                rebuildFileTemp += value.to_bytes(sizes[data['columnTypes'][column]], 'little', signed = signeds[data['columnTypes'][column]])
+
+                            elif data['columnTypes'][column] == 7: #float32
+                                value = jsonInfo['ROW_CONTENT'][row][column]
+                                value = bytes(bytearray(struct.pack("<f", value)))
+                                rebuildFileTemp += value
+
+                            elif data['columnTypes'][column] == 11: #float64
+                                value = jsonInfo['ROW_CONTENT'][row][column]
+                                value = bytes(bytearray(struct.pack("<d", value)))
+                                rebuildFileTemp += value
+
+                            elif data['columnTypes'][column] == 13: #String
+                                index = jsonInfo['TEXT'].index(jsonInfo['ROW_CONTENT'][row][column])
+                                rebuildFileTemp += index.to_bytes(8, 'little', signed=True)
+
+                            elif data['columnTypes'][column] == 9: #Table
+                            #Generate a dummy offset list and store the pointers. Write the subtables and update the dummy list with the right pointers
+                                offset = len(rebuildFileTemp)
+                                tableOffsets.append(offset)
+                                dummy = b'\x00\x00\x00\x00\x00\x00\x00\x00'
+                                rebuildFileTemp += dummy
+                                value = jsonInfo['ROW_CONTENT'][row][column]
+                                tables.append(value)
+
+                            elif data['columnTypes'][column] in arrays:
+                                arraySize = jsonInfo['ROW_CONTENT'][row][column]
+                                arraySizes[str(column)] = arraySize
+                    
+
+            dataTypesAuxTable = generateColumnDataTypesAuxTable(data['columnTypes'], sizes, arraySizes)
+
+
+            rebuildFileTemp += b'\x00'*calculateSeparator(len(rebuildFileTemp))
+            columnValueOffsetsOffset = len(rebuildFileTemp)
+            for offset in columnValueOffsets:
+                rebuildFileTemp += offset.to_bytes(4, 'little', signed=True)
+
+            rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x1C, 0x4, int(columnValueOffsetsOffset).to_bytes(4, 'little') ) #Add column content offset table pointer to the main table
+
+
     #Table value type
     for x in range(len(tables)):
         offset = int(len(rebuildFileTemp))
@@ -1189,11 +1471,18 @@ def importTable (data):
         rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x4C, 0x4, int(validityBoolOffset).to_bytes(4, 'little') ) #Add pointer to the main table
 
 
+    #V2 Column Types Aux Table
+    if version == 2 and 'dataTypesAuxTable' in locals():
+        pointer = int(len(rebuildFileTemp))
+        rebuildFileTemp += dataTypesAuxTable
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x48, 0x4, int(pointer).to_bytes(4, 'little') ) #Add pointer to the main table
+
+
     #subTable
     if "subTable" in data:
-        offset = len(rebuildFileTemp)
+        pointer = int(len(rebuildFileTemp))
         importTable (data['subTable'])
-        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x3C, 0x4, int(offset).to_bytes(4, 'little') ) #Add pointer to the main table
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x3C, 0x4, int(pointer).to_bytes(4, 'little') ) #Add pointer to the main table
 
 
 
