@@ -963,7 +963,8 @@ def importTable (data):
     #Initialize empty main table
     rebuildFileTemp += b'\x00\x00\x00\x00'*20
 
-    rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x23, 0x1, int(data["STORAGE_MODE"]).to_bytes(1, 'little', signed=True) )
+    if version==2: #Different storage modes are only present in v2, STORAGE_MODE does not exist as a key on v1 because it is always 0
+        rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x23, 0x1, int(data["STORAGE_MODE"]).to_bytes(1, 'little', signed=True) )
     rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0xC, 0x4, int(data["ROW_VALIDATOR"]).to_bytes(4, 'little', signed=True) )
     rebuildFileTemp = writeToPosition(rebuildFileTemp, pointerToMainTable + 0x2C, 0x4, int(data["COLUMN_VALIDATOR"]).to_bytes(4, 'little', signed=True) )
 
