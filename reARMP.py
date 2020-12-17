@@ -7,7 +7,7 @@ import struct
 import functools
 from collections import OrderedDict
 
-reARMP_version = "v0.11.0"
+reARMP_version = "v0.11.1"
 hexFile = b''
 rebuildFileTemp = bytearray()
 
@@ -547,7 +547,7 @@ def exportTable(pointerToMainTable):
             for column in columnNames:
                 column_index = columnNames.index(column)
 
-                if (columnTypes[str(column)] == -1): #Skip unused columns
+                if (columnTypes[str(column)] == -1 or columnContentOffsetTable[column_index] == 0): #Skip unused columns
                     emptyList = []
                     columnValues[column] = emptyList
                     continue
@@ -1265,7 +1265,7 @@ def importTable (data):
             
             for column in unusedColumns:
                 if unusedColumns[column] == jsonInfo['ROW_COUNT'] and data['columnTypes'][column] == 6: #This only applies to booleans (?)
-                    columnValueOffsets[jsonInfo['COLUMN_NAMES'].index(column)] = -1
+                    columnValueOffsets[jsonInfo['COLUMN_NAMES'].index(column)] = 0
 
             columnValueOffsetsOffset = len(rebuildFileTemp)
             for offset in columnValueOffsets:
