@@ -7,7 +7,7 @@ import struct
 import functools
 from collections import OrderedDict
 
-reARMP_version = "v0.11.1"
+reARMP_version = "v0.11.2"
 hexFile = b''
 rebuildFileTemp = bytearray()
 
