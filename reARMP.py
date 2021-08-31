@@ -88,16 +88,11 @@ def iteratePlainTextTable (tableContainer, offsetTable):
 
 
 
-def getColumnValueTextTableIndex (pointerToTable, numberOfEntries, row_index):
+def getColumnValueTextTable (pointerToTable, numberOfEntries):
     table = hexFile[(pointerToTable*2):(pointerToTable + numberOfEntries*4)*2]
     table = [table[i:i+(4*2)] for i in range(0, len(table), (4*2))]
-    index = table[row_index]    
-    if version == 1 and index == b'ffffffff':
-        return -1
-    else:
-        index = swapEndian(index, "<I")
-        return index
-        
+    return table
+
 
 
 def iterateValueTable (pointerToTable, numberOfEntries, valueType, valueSize):
@@ -425,6 +420,10 @@ def exportTable(pointerToMainTable):
                 columnValues[column] = valueTable
                 continue
 
+            if (columnTypes[str(column)] == 12): #String
+                valueTable = getColumnValueTextTable (columnContentOffsetTable[column_index], rowCount)
+                columnValues[column] = valueTable
+
 
         row_index = 0
         for row in rowNamesTable: #Element per row
@@ -448,7 +447,12 @@ def exportTable(pointerToMainTable):
                     continue
 
                 if (columnTypes[str(column)] == 12): #String
-                    index = getColumnValueTextTableIndex (columnContentOffsetTable[column_index], rowCount, row_index)
+                    index = columnValues[column][row_index]
+                    if index == b'ffffffff':
+                        index = -1
+                    else:
+                        index = swapEndian(index, "<I")
+
                     if (index == -1):
                         continue
                     columnData = {str(column) : textTable[index]}
@@ -562,6 +566,10 @@ def exportTable(pointerToMainTable):
                     columnValues[column] = valueTable
                     continue
 
+                if (columnTypes[str(column)] == 13): #String
+                    valueTable = getColumnValueTextTable (columnContentOffsetTable[column_index], rowCount)
+                    columnValues[column] = valueTable
+
 
             row_index = 0
             for row in rowNamesTable: #Element per row
@@ -584,7 +592,9 @@ def exportTable(pointerToMainTable):
                         continue
 
                     if (columnTypes[str(column)] == 13): #String
-                        index = getColumnValueTextTableIndex (columnContentOffsetTable[column_index], rowCount, row_index)
+                        index = columnValues[column][row_index]
+                        index = swapEndian(index, "<I")
+
                         if (index == -1):
                             continue
                         columnData = {str(column) : textTable[index]}
